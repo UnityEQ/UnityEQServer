@@ -1596,6 +1596,7 @@ void EQWebStream::ProcessPacket(uint16 opcode, const unsigned char* data, uint32
 	{
 		MInQueue.lock();
 		InQueue.push_back(ap);
+		SetLastPacketTime(Timer::GetCurrentTime());
 		MInQueue.unlock();
 	}
 }

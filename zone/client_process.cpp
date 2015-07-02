@@ -568,6 +568,13 @@ bool Client::Process() {
 				DoGravityEffect();
 		}
 
+		if(ping_timer.Check())
+		{
+			EQApplicationPacket* app = new EQApplicationPacket(OP_EmuKeepAlive, 0);
+			QueuePacket(app);
+			safe_delete(app);
+		}
+
 		if (shield_timer.Check())
 		{
 			if (shield_target)
@@ -687,6 +694,7 @@ bool Client::Process() {
 	EQApplicationPacket *app = nullptr;
 	if(!eqs->CheckState(CLOSING))
 	{
+
 		while(ret && (app = (EQApplicationPacket *)eqs->PopPacket())) {
 			if(app)
 				ret = HandlePacket(app);

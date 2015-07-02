@@ -548,4 +548,8 @@ N(OP_ZoneServerInfo),
 N(OP_ZoneServerReady),
 N(OP_ZoneSpawns),
 N(OP_ZoneUnavail),
+
+//EQBrowser specific
+N(OP_EmuKeepAlive),
+
 // mail and chat opcodes located in ../mail_oplist.h

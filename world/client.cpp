@@ -72,6 +72,7 @@ extern WebInterfaceConnection WILink;
 Client::Client(EQStreamInterface* ieqs)
 :	autobootup_timeout(RuleI(World, ZoneAutobootTimeoutMS)),
 	CLE_keepalive_timer(RuleI(World, ClientKeepaliveTimeoutMS)),
+	CLE_ping_timer(10000),
 	connect(1000),
 	eqs(ieqs)
 {
@@ -1010,6 +1011,7 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 		case OP_LoginComplete:
 		case OP_ApproveWorld:
 		case OP_WorldClientReady:
+		case OP_EmuKeepAlive:
 		{
 			// Essentially we are just 'eating' these packets, indicating
 			// they are handled.
@@ -1047,6 +1049,14 @@ bool Client::Process() {
 		if (cle)
 			cle->KeepAlive();
 	}
+
+	if (CLE_ping_timer.Check()) {
+		EQApplicationPacket* app = new EQApplicationPacket(OP_EmuKeepAlive, 0);
+		QueuePacket(app);
+		safe_delete(app);
+
+	}
+
 
 	/************ Get all packets from packet manager out queue and process them ************/
 	EQApplicationPacket *app = 0;
@@ -1768,40 +1778,6 @@ bool CheckCharCreateInfoTitanium(CharCreate_Struct *cc)
 	// that none are lower than the base or higher than base + stat_points
 	// NOTE: these could just be else if, but i want to see all the stats
 	// that are messed up not just the first hit
-
-	if (bTOTAL + stat_points != cTOTAL) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat points total doesn't match expected value: expecting %d got %d", bTOTAL + stat_points, cTOTAL);
-		Charerrors++;
-	}
-
-	if (cc->STR > bSTR + stat_points || cc->STR < bSTR) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat STR is out of range");
-		Charerrors++;
-	}
-	if (cc->STA > bSTA + stat_points || cc->STA < bSTA) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat STA is out of range");
-		Charerrors++;
-	}
-	if (cc->AGI > bAGI + stat_points || cc->AGI < bAGI) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat AGI is out of range");
-		Charerrors++;
-	}
-	if (cc->DEX > bDEX + stat_points || cc->DEX < bDEX) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat DEX is out of range");
-		Charerrors++;
-	}
-	if (cc->WIS > bWIS + stat_points || cc->WIS < bWIS) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat WIS is out of range");
-		Charerrors++;
-	}
-	if (cc->INT > bINT + stat_points || cc->INT < bINT) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat INT is out of range");
-		Charerrors++;
-	}
-	if (cc->CHA > bCHA + stat_points || cc->CHA < bCHA) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat CHA is out of range");
-		Charerrors++;
-	}
 
 	/*TODO: Check for deity/class/race.. it'd be nice, but probably of any real use to hack(faction, deity based items are all I can think of)
 	I am NOT writing those tables - kathgar*/

@@ -338,13 +338,19 @@ int main(int argc, char** argv) {
 	Timer quest_timers(100);
 	UpdateWindowTitle();
 	bool worldwasconnected = worldserver.Connected();
-	std::shared_ptr<EQStream> eqss;
 	std::shared_ptr<EQWebStream> eqwss;
 	EQStreamInterface *eqsi;
 	uint8 IDLEZONEUPDATE = 200;
 	uint8 ZONEUPDATE = 10;
 	Timer zoneupdate_timer(ZONEUPDATE);
 	zoneupdate_timer.Start();
+
+	if (Config->ZonePort!=0) {
+			if (!eqwsf.Open()) {
+				Log.Out(Logs::General, Logs::Zone_Server, "Failed to open websockets for port %d",Config->ZonePort);
+			}
+	}
+
 	while(RunLoops) {
 		{	//profiler block to omit the sleep from times
 
@@ -361,27 +367,6 @@ int main(int argc, char** argv) {
 				worldserver.Disconnect();
 				worldwasconnected = false;
 			}
-		}
-
-		if (Config->ZonePort!=0) {
-			if (!eqwsf.Open()) {
-				Log.Out(Logs::General, Logs::Zone_Server, "Failed to open websockets for port %d",Config->ZonePort);
-			}
-			else
-			{
-				Log.Out(Logs::General, Logs::Zone_Server, "Starting Websocket server on port %d",Config->ZonePort);
-			}
-		}
-
-		//check the factory for any new incoming streams.
-		while ((eqss = eqsf.Pop())) {
-			//pull the stream out of the factory and give it to the stream identifier
-			//which will figure out what patch they are running, and set up the dynamic
-			//structures and opcodes for that patch.
-			struct in_addr	in;
-			in.s_addr = eqss->GetRemoteIP();
-			Log.Out(Logs::Detail, Logs::World_Server, "New connection from %s:%d", inet_ntoa(in),ntohs(eqss->GetRemotePort()));
-			stream_identifier.AddStream(eqss);	//takes the stream
 		}
 
 		//check the factory for any new incoming streams.

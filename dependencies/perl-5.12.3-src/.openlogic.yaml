@@ -1,0 +1,18 @@
+--- 
+name: Perl 5.12.3 Source
+platform_id: all
+platform_version: all
+distribution_file_uuid_string: openlogic-perl-5.12.3-all-src-1
+platform_vendor: all
+description: Perl 5.12.3 Source
+platform_arch: all
+distribution_file_uuid: 697f35126c8869cdab44f2b2e7712fea7df97964c2b4271fb2d21d43504f4596
+distribution_version: 1
+distribution_flavor: ""
+distribution_raw_file: 5.12.3/perl-5.12.3.tar.gz
+notify: "yes"
+package_version: 5.12.3
+package_id: perl
+release_date: "2011-06-27"
+distribution_notes: ""
+distribution_type: src

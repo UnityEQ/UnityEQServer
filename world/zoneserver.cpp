@@ -1287,6 +1287,7 @@ bool ZoneServer::Process() {
 			case ServerOP_WIRemoteCallResponse:
 			case ServerOP_WIClientSession:
 			case ServerOP_WIRemoteCallToClient:
+			case ServerOP_WIRemoteOpcodeToClient:
 			{
 				WILink.SendPacket(pack);
 				break;

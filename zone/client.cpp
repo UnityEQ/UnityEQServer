@@ -126,6 +126,7 @@ Client::Client(EQStreamInterface* ieqs)
 	global_channel_timer(1000),
 	shield_timer(500),
 	fishing_timer(8000),
+	ping_timer(10000),
 	endupkeep_timer(1000),
 	forget_timer(0),
 	autosave_timer(RuleI(Character, AutosaveIntervalS)*1000),

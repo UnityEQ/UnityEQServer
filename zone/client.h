@@ -1461,6 +1461,7 @@ private:
 	Timer global_channel_timer;
 	Timer shield_timer;
 	Timer fishing_timer;
+	Timer ping_timer;
 	Timer endupkeep_timer;
 	Timer forget_timer; // our 2 min everybody forgets you timer
 	Timer autosave_timer;
