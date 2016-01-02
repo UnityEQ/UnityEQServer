@@ -177,7 +177,6 @@ Client::Client(EQStreamInterface* ieqs)
 	admin = 0;
 	lsaccountid = 0;
 	shield_target = nullptr;
-	SQL_log = nullptr;
 	guild_id = GUILD_NONE;
 	guildrank = 0;
 	GuildBanker = false;
@@ -199,6 +198,7 @@ Client::Client(EQStreamInterface* ieqs)
 	SetTarget(0);
 	auto_attack = false;
 	auto_fire = false;
+	runmode = false;
 	linkdead_timer.Disable();
 	zonesummon_id = 0;
 	zonesummon_ignorerestrictions = 0;
@@ -301,6 +301,7 @@ Client::Client(EQStreamInterface* ieqs)
 		XTargets[i].Type = Auto;
 		XTargets[i].ID = 0;
 		XTargets[i].Name[0] = 0;
+		XTargets[i].dirty = false;
 	}
 	MaxXTargets = 5;
 	XTargetAutoAddHaters = true;
@@ -409,7 +410,11 @@ Client::~Client() {
 	if(zone)
 	zone->RemoveAuth(GetName());
 
-	//let the stream factory know were done with this stream
+
+	auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+	outapp->pBuffer[0] = 0;
+	QueuePacket(outapp);
+	safe_delete(outapp);
 	eqs->Close();
 	eqs->ReleaseFromUse();
 	safe_delete(eqs);
@@ -441,7 +446,7 @@ void Client::SendZoneInPackets()
 
 	//Send AA Exp packet:
 	if (GetLevel() >= 51)
-		SendAAStats();
+		SendAlternateAdvancementStats();
 
 	// Send exp packets
 	outapp = new EQApplicationPacket(OP_ExpUpdate, sizeof(ExpUpdate_Struct));
@@ -458,7 +463,7 @@ void Client::SendZoneInPackets()
 	}
 	safe_delete(outapp);
 
-	SendAATimers();
+	SendAlternateAdvancementTimers();
 
 	outapp = new EQApplicationPacket(OP_RaidUpdate, sizeof(ZoneInSendName_Struct));
 	ZoneInSendName_Struct* zonesendname = (ZoneInSendName_Struct*)outapp->pBuffer;
@@ -525,48 +530,39 @@ void Client::ReportConnectingState() {
 	};
 }
 
-bool Client::SaveAA(){
-	int first_entry = 0;
-	std::string rquery;
-	/* Save Player AA */
+bool Client::SaveAA() {
+	std::string iquery;
 	int spentpoints = 0;
-	for (int a = 0; a < MAX_PP_AA_ARRAY; a++) {
-		uint32 points = aa[a]->value;
-		if (points > HIGHEST_AA_VALUE) {
-			aa[a]->value = HIGHEST_AA_VALUE;
-			points = HIGHEST_AA_VALUE;
-		}
-		if (points > 0) {
-			SendAA_Struct* curAA = zone->FindAA(aa[a]->AA - aa[a]->value + 1);
-			if (curAA) {
-				for (int rank = 0; rank<points; rank++) {
-					std::map<uint32, AALevelCost_Struct>::iterator RequiredLevel = AARequiredLevelAndCost.find(aa[a]->AA - aa[a]->value + 1 + rank);
-					if (RequiredLevel != AARequiredLevelAndCost.end()) {
-						spentpoints += RequiredLevel->second.Cost;
-					}
-					else
-						spentpoints += (curAA->cost + (curAA->cost_inc * rank));
-				}
-			}
-		}
-	}
-	m_pp.aapoints_spent = spentpoints + m_epp.expended_aa;
-	int highest = 0;
-	for (int a = 0; a < MAX_PP_AA_ARRAY; a++) {
-		if (aa[a]->AA > 0) { // those with value 0 will be cleaned up on next load
-			if (first_entry != 1){
-				rquery = StringFormat("REPLACE INTO `character_alternate_abilities` (id, slot, aa_id, aa_value, charges)"
-					" VALUES (%u, %u, %u, %u, %u)", character_id, a, aa[a]->AA, aa[a]->value, aa[a]->charges);
-				first_entry = 1;
+	int i = 0;
+	for(auto &rank : aa_ranks) {
+		AA::Ability *ability = zone->GetAlternateAdvancementAbility(rank.first);
+		if(!ability)
+			continue;
+
+		if(rank.second.first > 0) {
+			AA::Rank *r = ability->GetRankByPointsSpent(rank.second.first);
+
+			if(!r)
+				continue;
+
+			spentpoints += r->total_cost;
+
+			if(i == 0) {
+				iquery = StringFormat("REPLACE INTO `character_alternate_abilities` (id, aa_id, aa_value, charges)"
+									  " VALUES (%u, %u, %u, %u)", character_id, ability->first_rank_id, rank.second.first, rank.second.second);
 			} else {
-				rquery = rquery + StringFormat(", (%u, %u, %u, %u, %u)", character_id, a, aa[a]->AA, aa[a]->value, aa[a]->charges);
+				iquery += StringFormat(", (%u, %u, %u, %u)", character_id, ability->first_rank_id, rank.second.first, rank.second.second);
 			}
-			highest = a;
+			i++;
 		}
 	}
-	auto results = database.QueryDatabase(rquery);
-	/* This is another part of the hack to clean up holes left by expendable AAs */
-	rquery = StringFormat("DELETE FROM `character_alternate_abilities` WHERE `id` = %u AND `slot` > %d", character_id, highest);
+
+	m_pp.aapoints_spent = spentpoints + m_epp.expended_aa;
+
+	if(iquery.length() > 0) {
+		database.QueryDatabase(iquery);
+	}
+
 	return true;
 }
 
@@ -651,6 +647,17 @@ bool Client::Save(uint8 iCommitNow) {
 
 	m_pp.hunger_level = EQEmu::Clamp(m_pp.hunger_level, 0, 50000);
 	m_pp.thirst_level = EQEmu::Clamp(m_pp.thirst_level, 0, 50000);
+
+	// perform snapshot before SaveCharacterData() so that m_epp will contain the updated time
+	if (RuleB(Character, ActiveInvSnapshots) && time(nullptr) >= GetNextInvSnapshotTime()) {
+		if (database.SaveCharacterInventorySnapshot(CharacterID())) {
+			SetNextInvSnapshot(RuleI(Character, InvSnapshotMinIntervalM));
+		}
+		else {
+			SetNextInvSnapshot(RuleI(Character, InvSnapshotMinRetryM));
+		}
+	}
+
 	database.SaveCharacterData(this->CharacterID(), this->AccountID(), &m_pp, &m_epp); /* Save Character Data */
 
 	return true;
@@ -4967,7 +4974,7 @@ void Client::ShowSkillsWindow()
 		"Singing","Sneak","Specialize Abjuration","Specialize Alteration","Specialize Conjuration","Specialize Divination","Specialize Evocation","Pick Pockets",
 		"Stringed Instruments","Swimming","Throwing","Tiger Claw","Tracking","Wind Instruments","Fishing","Make Poison","Tinkering","Research",
 		"Alchemy","Baking","Tailoring","Sense Traps","Blacksmithing","Fletching","Brewing","Alcohol Tolerance","Begging","Jewelry Making",
-		"Pottery","Percussion Instruments","Intimidation","Berserking","Taunt","Frenzy"};
+		"Pottery","Percussion Instruments","Intimidation","Berserking","Taunt","Frenzy","Remove Traps","Triple Attack"};
 	for(int i = 0; i <= (int)HIGHEST_SKILL; i++)
 		Skills[SkillName[i]] = (SkillUseTypes)i;
 
@@ -4988,7 +4995,6 @@ void Client::ShowSkillsWindow()
 	}
 	this->SendPopupToClient(WindowTitle, WindowText.c_str());
 }
-
 
 void Client::SetShadowStepExemption(bool v)
 {
@@ -7052,7 +7058,7 @@ void Client::UpdateClientXTarget(Client *c)
 	}
 }
 
-void Client::AddAutoXTarget(Mob *m)
+void Client::AddAutoXTarget(Mob *m, bool send)
 {
 	if(!XTargettingAvailable() || !XTargetAutoAddHaters)
 		return;
@@ -7065,7 +7071,10 @@ void Client::AddAutoXTarget(Mob *m)
 		if((XTargets[i].Type == Auto) && (XTargets[i].ID == 0))
 		{
 			XTargets[i].ID = m->GetID();
-			SendXTargetPacket(i, m);
+			if (send) // if we don't send we're bulk sending updates later on
+				SendXTargetPacket(i, m);
+			else
+				XTargets[i].dirty = true;
 			break;
 		}
 	}
@@ -7073,42 +7082,60 @@ void Client::AddAutoXTarget(Mob *m)
 
 void Client::RemoveXTarget(Mob *m, bool OnlyAutoSlots)
 {
-	if(!XTargettingAvailable())
+	if (!XTargettingAvailable())
 		return;
 
 	bool HadFreeAutoSlotsBefore = false;
 
 	int FreedAutoSlots = 0;
 
-	if(m->GetID() == 0)
+	if (m->GetID() == 0)
 		return;
 
-	for(int i = 0; i < GetMaxXTargets(); ++i)
-	{
-		if(OnlyAutoSlots && (XTargets[i].Type !=Auto))
+	for (int i = 0; i < GetMaxXTargets(); ++i) {
+		if (OnlyAutoSlots && XTargets[i].Type != Auto)
 			continue;
 
-		if(XTargets[i].ID == m->GetID())
-		{
-			if(XTargets[i].Type == CurrentTargetNPC)
+		if (XTargets[i].ID == m->GetID()) {
+			if (XTargets[i].Type == CurrentTargetNPC)
 				XTargets[i].Type = Auto;
 
-			if(XTargets[i].Type == Auto)
+			if (XTargets[i].Type == Auto)
 				++FreedAutoSlots;
 
 			XTargets[i].ID = 0;
-
-			SendXTargetPacket(i, nullptr);
-		}
-		else
-		{
-			if((XTargets[i].Type == Auto) && (XTargets[i].ID == 0))
+			XTargets[i].dirty = true;
+		} else {
+			if (XTargets[i].Type == Auto && XTargets[i].ID == 0)
 				HadFreeAutoSlotsBefore = true;
 		}
 	}
-	// If there are more mobs aggro on us than we had auto-hate slots, add one of those haters into the slot(s) we just freed up.
-	if(!HadFreeAutoSlotsBefore && FreedAutoSlots)
+
+	// move shit up! If the removed NPC was in a CurrentTargetNPC slot it becomes Auto
+	// and we need to potentially fill it
+	std::queue<int> empty_slots;
+	for (int i = 0; i < GetMaxXTargets(); ++i) {
+		if (XTargets[i].Type != Auto)
+			continue;
+
+		if (XTargets[i].ID == 0) {
+			empty_slots.push(i);
+			continue;
+		}
+
+		if (XTargets[i].ID != 0 && !empty_slots.empty()) {
+			int temp = empty_slots.front();
+			std::swap(XTargets[i], XTargets[temp]);
+			XTargets[i].dirty = XTargets[temp].dirty = true;
+			empty_slots.pop();
+			empty_slots.push(i);
+		}
+	}
+	// If there are more mobs aggro on us than we had auto-hate slots, add one of those haters into the slot(s) we
+	// just freed up.
+	if (!HadFreeAutoSlotsBefore && FreedAutoSlots)
 		entity_list.RefreshAutoXTargets(this);
+	SendXTargetUpdates();
 }
 
 void Client::UpdateXTargetType(XTargetType Type, Mob *m, const char *Name)
@@ -7174,6 +7201,46 @@ void Client::SendXTargetPacket(uint32 Slot, Mob *m)
 	}
 	outapp->WriteUInt32(XTargets[Slot].ID);
 	outapp->WriteString(m ? m->GetCleanName() : XTargets[Slot].Name);
+	FastQueuePacket(&outapp);
+}
+
+// This is a bulk packet, we use it when we remove something since we need to reorder the xtargets and maybe
+// add new mobs! Currently doesn't check if there is a dirty flag set, so it should only be called when there is
+void Client::SendXTargetUpdates()
+{
+	if (!XTargettingAvailable())
+		return;
+
+	int count = 0;
+	// header is 4 bytes max xtargets, 4 bytes count
+	// entry is 4 bytes slot, 1 byte unknown, 4 bytes ID, 65 char name
+	auto outapp = new EQApplicationPacket(OP_XTargetResponse, 8 + 74 * GetMaxXTargets()); // fuck it max size
+	outapp->WriteUInt32(GetMaxXTargets());
+	outapp->WriteUInt32(1); // we will correct this later
+	for (int i = 0; i < GetMaxXTargets(); ++i) {
+		if (XTargets[i].dirty) {
+			outapp->WriteUInt32(i);
+			outapp->WriteUInt8(0); // no idea what this is
+			outapp->WriteUInt32(XTargets[i].ID);
+			outapp->WriteString(XTargets[i].Name);
+			count++;
+			XTargets[i].dirty = false;
+		}
+	}
+
+	// RemoveXTarget probably got called with a mob not on our xtargets
+	if (count == 0) {
+		safe_delete(outapp);
+		return;
+	}
+
+	auto newbuff = new uchar[outapp->GetWritePosition()];
+	memcpy(newbuff, outapp->pBuffer, outapp->GetWritePosition());
+	safe_delete_array(outapp->pBuffer);
+	outapp->pBuffer = newbuff;
+	outapp->size = outapp->GetWritePosition();
+	outapp->SetWritePosition(4);
+	outapp->WriteUInt32(count);
 	FastQueuePacket(&outapp);
 }
 
@@ -8041,56 +8108,6 @@ void Client::TryItemTimer(int slot)
 	}
 }
 
-void Client::RefundAA() {
-	int cur = 0;
-	bool refunded = false;
-
-	for(int x = 0; x < aaHighestID; x++) {
-		cur = GetAA(x);
-		if(cur > 0){
-			SendAA_Struct* curaa = zone->FindAA(x);
-			if(cur){
-				SetAA(x, 0);
-				for(int j = 0; j < cur; j++) {
-					m_pp.aapoints += curaa->cost + (curaa->cost_inc * j);
-					refunded = true;
-				}
-			}
-			else
-			{
-				m_pp.aapoints += cur;
-				SetAA(x, 0);
-				refunded = true;
-			}
-		}
-	}
-
-	if(refunded) {
-		SaveAA();
-		Save();
-		// Kick();
-	}
-}
-
-void Client::IncrementAA(int aa_id) {
-	SendAA_Struct* aa2 = zone->FindAA(aa_id);
-
-	if(aa2 == nullptr)
-		return;
-
-	if(GetAA(aa_id) == aa2->max_level)
-		return;
-
-	SetAA(aa_id, GetAA(aa_id) + 1);
-
-	SaveAA();
-
-	SendAA(aa_id);
-	SendAATable();
-	SendAAStats();
-	CalcBonuses();
-}
-
 void Client::SendItemScale(ItemInst *inst) {
 	int slot = m_inv.GetSlotByItemInst(inst);
 	if(slot != -1) {
@@ -8638,4 +8655,97 @@ void Client::QuestReward(Mob* target, uint32 copper, uint32 silver, uint32 gold,
 
 	QueuePacket(outapp, false, Client::CLIENT_CONNECTED);
 	safe_delete(outapp);
+}
+
+void Client::SendHPUpdateMarquee(){
+	if (!RuleB(Character, MarqueeHPUpdates))
+		return;
+
+	/* Health Update Marquee Display: Custom*/
+	uint32 health_percentage = (uint32)(this->cur_hp * 100 / this->max_hp);
+	if (health_percentage == 100)
+		return;
+
+	std::string health_update_notification = StringFormat("Health: %u%%", health_percentage);
+	this->SendMarqueeMessage(15, 510, 0, 3000, 3000, health_update_notification);
+}
+
+uint32 Client::GetMoney(uint8 type, uint8 subtype) {
+	uint32 value = 0;
+	switch (type) {
+		case 0: {
+			switch (subtype) {
+				case 0:
+					value = static_cast<uint32>(m_pp.copper);
+					break;
+				case 1:
+					value = static_cast<uint32>(m_pp.copper_bank);
+					break;
+				case 2:
+					value = static_cast<uint32>(m_pp.copper_cursor);
+					break;
+				default:
+					break;
+			}
+			break;
+		}
+		case 1: {
+			switch (subtype) {
+				case 0:
+					value = static_cast<uint32>(m_pp.silver);
+					break;
+				case 1:
+					value = static_cast<uint32>(m_pp.silver_bank);
+					break;
+				case 2:
+					value = static_cast<uint32>(m_pp.silver_cursor);
+					break;
+				default:
+					break;
+			}
+			break;
+		}
+		case 2: {
+			switch (subtype) {
+				case 0:
+					value = static_cast<uint32>(m_pp.gold);
+					break;
+				case 1:
+					value = static_cast<uint32>(m_pp.gold_bank);
+					break;
+				case 2:
+					value = static_cast<uint32>(m_pp.gold_cursor);
+					break;
+				default:
+					break;
+			}
+			break;
+		}
+		case 3: {
+			switch (subtype) {
+				case 0:
+					value = static_cast<uint32>(m_pp.platinum);
+					break;
+				case 1:
+					value = static_cast<uint32>(m_pp.platinum_bank);
+					break;
+				case 2:
+					value = static_cast<uint32>(m_pp.platinum_cursor);
+					break;
+				case 3:
+					value = static_cast<uint32>(m_pp.platinum_shared);
+					break;
+				default:
+					break;
+			}
+			break;
+		}
+		default:
+			break;
+	}
+	return value;
+}
+
+int Client::GetAccountAge() {
+	return (time(nullptr) - GetAccountCreation());
 }

@@ -3998,9 +3998,9 @@ XS(XS_Mob_CastSpell)
         }
 
 		if (resist_adjust == 0)//If you do not pass resist adjust as nullptr it will ignore the spells default resist adjust
-			THIS->CastSpell(spell_id, target_id, slot, casttime, mana_cost, 0, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0);
+			THIS->CastSpell(spell_id, target_id, slot, casttime, mana_cost, 0, 0xFFFFFFFF, 0xFFFFFFFF, 0);
 		else
-			THIS->CastSpell(spell_id, target_id, slot, casttime, mana_cost, 0, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0, &resist_adjust);
+			THIS->CastSpell(spell_id, target_id, slot, casttime, mana_cost, 0, 0xFFFFFFFF, 0xFFFFFFFF, 0, &resist_adjust);
 	}
 	XSRETURN_EMPTY;
 }
@@ -6316,7 +6316,7 @@ XS(XS_Mob_CheckAggroAmount)
 		if(THIS == nullptr)
 			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
 
-		RETVAL = THIS->CheckAggroAmount(spellid);
+		RETVAL = THIS->CheckAggroAmount(spellid, nullptr);
 		XSprePUSH; PUSHu((UV)RETVAL);
 	}
 	XSRETURN(1);
@@ -6349,7 +6349,7 @@ XS(XS_Mob_CheckHealAggroAmount)
 			possible = (uint32)SvUV(ST(2));
 		}
 
-		RETVAL = THIS->CheckHealAggroAmount(spellid, possible);
+		RETVAL = THIS->CheckHealAggroAmount(spellid, nullptr, possible);
 		XSprePUSH; PUSHu((UV)RETVAL);
 	}
 	XSRETURN(1);
@@ -6360,12 +6360,12 @@ XS(XS_Mob_GetAA)
 {
 	dXSARGS;
 	if (items != 2)
-		Perl_croak(aTHX_ "Usage: Mob::GetAA(THIS, aa_id)");
+		Perl_croak(aTHX_ "Usage: Mob::GetAA(THIS, rank_id)");
 	{
 		Mob *		THIS;
 		uint32		RETVAL;
 		dXSTARG;
-		uint32		aa_id = (uint32)SvUV(ST(1));
+		uint32		rank_id = (uint32)SvUV(ST(1));
 
 		if (sv_derived_from(ST(0), "Mob")) {
 			IV tmp = SvIV((SV*)SvRV(ST(0)));
@@ -6376,8 +6376,64 @@ XS(XS_Mob_GetAA)
 		if(THIS == nullptr)
 			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
 
-		RETVAL = THIS->GetAA(aa_id);
+		RETVAL = THIS->GetAA(rank_id);
 		XSprePUSH; PUSHu((UV)RETVAL);
+	}
+	XSRETURN(1);
+}
+
+XS(XS_Mob_GetAAByAAID); /* prototype to pass -Wmissing-prototypes */
+XS(XS_Mob_GetAAByAAID)
+{
+	dXSARGS;
+	if(items != 2)
+		Perl_croak(aTHX_ "Usage: Mob::GetAAByAAID(THIS, aa_id)");
+	{
+		Mob *		THIS;
+		uint32		RETVAL;
+		dXSTARG;
+		uint32		aa_id = (uint32)SvUV(ST(1));
+
+		if(sv_derived_from(ST(0), "Mob")) {
+			IV tmp = SvIV((SV*)SvRV(ST(0)));
+			THIS = INT2PTR(Mob *, tmp);
+		}
+		else
+			Perl_croak(aTHX_ "THIS is not of type Mob");
+		if(THIS == nullptr)
+			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
+
+		RETVAL = THIS->GetAAByAAID(aa_id);
+		XSprePUSH; PUSHu((UV)RETVAL);
+	}
+	XSRETURN(1);
+}
+
+XS(XS_Mob_SetAA); /* prototype to pass -Wmissing-prototypes */
+XS(XS_Mob_SetAA)
+{
+	dXSARGS;
+	if(items < 3 || items > 4)
+		Perl_croak(aTHX_ "Usage: Mob::SetAA(THIS, aa_id, points, [charges])");
+	{
+		Mob *		THIS;
+		bool		RETVAL;
+		int			aa_id = (int)SvIV(ST(1));
+		int			points = (int)SvIV(ST(2));
+		int			charges = (items == 4) ? (int)SvIV(ST(3)) : 0;
+
+		if(sv_derived_from(ST(0), "Mob")) {
+			IV tmp = SvIV((SV*)SvRV(ST(0)));
+			THIS = INT2PTR(Mob *, tmp);
+		}
+		else
+			Perl_croak(aTHX_ "THIS is not of type Mob");
+		if(THIS == nullptr)
+			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
+
+		RETVAL = THIS->SetAA(aa_id, points, charges);
+		ST(0) = boolSV(RETVAL);
+		sv_2mortal(ST(0));
 	}
 	XSRETURN(1);
 }
@@ -7349,7 +7405,7 @@ XS(XS_Mob_GetGlobal)
 		RETVAL = ret_val.c_str();
 		sv_setpv(TARG, RETVAL); XSprePUSH; PUSHTARG;
 	}
-	XSRETURN(1);		
+	XSRETURN(1);
 }
 
 XS(XS_Mob_SetGlobal);
@@ -8625,6 +8681,8 @@ XS(boot_Mob)
 		newXSproto(strcpy(buf, "CheckAggroAmount"), XS_Mob_CheckAggroAmount, file, "$$");
 		newXSproto(strcpy(buf, "CheckHealAggroAmount"), XS_Mob_CheckHealAggroAmount, file, "$$");
 		newXSproto(strcpy(buf, "GetAA"), XS_Mob_GetAA, file, "$$");
+		newXSproto(strcpy(buf, "GetAAByAAID"), XS_Mob_GetAAByAAID, file, "$$");
+		newXSproto(strcpy(buf, "SetAA"), XS_Mob_SetAA, file, "$$$;$");
 		newXSproto(strcpy(buf, "DivineAura"), XS_Mob_DivineAura, file, "$");
 		newXSproto(strcpy(buf, "AddFeignMemory"), XS_Mob_AddFeignMemory, file, "$$");
 		newXSproto(strcpy(buf, "RemoveFromFeignMemory"), XS_Mob_RemoveFromFeignMemory, file, "$$");

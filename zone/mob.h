@@ -23,6 +23,8 @@
 #include "hate_list.h"
 #include "pathing.h"
 #include "position.h"
+#include "aa_ability.h"
+#include "aa.h"
 #include <set>
 #include <vector>
 #include <memory>
@@ -143,11 +145,11 @@ public:
 	uint16 GetThrownDamage(int16 wDmg, int32& TotalDmg, int& minDmg);
 	// 13 = Primary (default), 14 = secondary
 	virtual bool Attack(Mob* other, int Hand = MainPrimary, bool FromRiposte = false, bool IsStrikethrough = false,
-		bool IsFromSpell = false, ExtraAttackOptions *opts = nullptr) = 0;
+		bool IsFromSpell = false, ExtraAttackOptions *opts = nullptr, int special = 0) = 0;
 	int MonkSpecialAttack(Mob* other, uint8 skill_used);
 	virtual void TryBackstab(Mob *other,int ReuseTime = 10);
 	void TriggerDefensiveProcs(const ItemInst* weapon, Mob *on, uint16 hand = MainPrimary, int damage = 0);
-	virtual bool AvoidDamage(Mob* attacker, int32 &damage, bool CanRiposte = true);
+	bool AvoidDamage(Mob* attacker, int32 &damage, int hand);
 	virtual bool CheckHitChance(Mob* attacker, SkillUseTypes skillinuse, int Hand, int16 chance_mod = 0);
 	virtual void TryCriticalHit(Mob *defender, uint16 skill, int32 &damage, ExtraAttackOptions *opts = nullptr);
 	void TryPetCriticalHit(Mob *defender, uint16 skill, int32 &damage);
@@ -164,6 +166,20 @@ public:
 	void CommonOutgoingHitSuccess(Mob* defender, int32 &damage, SkillUseTypes skillInUse);
 	void CommonBreakInvisible();
 	bool HasDied();
+	virtual bool CheckDualWield();
+	void DoMainHandAttackRounds(Mob *target, ExtraAttackOptions *opts = nullptr, int special = 0);
+	void DoOffHandAttackRounds(Mob *target, ExtraAttackOptions *opts = nullptr, int special = 0);
+	virtual bool CheckDoubleAttack();
+	// inline process for places where we need to do them outside of the AI_Process
+	void ProcessAttackRounds(Mob *target, ExtraAttackOptions *opts = nullptr, int special = 0)
+	{
+		if (target) {
+			DoMainHandAttackRounds(target, opts, special);
+			if (CanThisClassDualWield())
+				DoOffHandAttackRounds(target, opts, special);
+		}
+		return;
+	}
 
 	//Appearance
 	void SendLevelAppearance();
@@ -221,10 +237,12 @@ public:
 	virtual void SpellProcess();
 	virtual bool CastSpell(uint16 spell_id, uint16 target_id, uint16 slot = USE_ITEM_SPELL_SLOT, int32 casttime = -1,
 		int32 mana_cost = -1, uint32* oSpellWillFinish = 0, uint32 item_slot = 0xFFFFFFFF,
-		uint32 timer = 0xFFFFFFFF, uint32 timer_duration = 0, uint32 type = 0, int16 *resist_adjust = nullptr);
+		uint32 timer = 0xFFFFFFFF, uint32 timer_duration = 0, int16 *resist_adjust = nullptr,
+		uint32 aa_id = 0);
 	virtual bool DoCastSpell(uint16 spell_id, uint16 target_id, uint16 slot = 10, int32 casttime = -1,
 		int32 mana_cost = -1, uint32* oSpellWillFinish = 0, uint32 item_slot = 0xFFFFFFFF,
-		uint32 timer = 0xFFFFFFFF, uint32 timer_duration = 0, uint32 type = 0, int16 resist_adjust = 0);
+		uint32 timer = 0xFFFFFFFF, uint32 timer_duration = 0, int16 resist_adjust = 0,
+		uint32 aa_id = 0);
 	void CastedSpellFinished(uint16 spell_id, uint32 target_id, uint16 slot, uint16 mana_used,
 		uint32 inventory_slot = 0xFFFFFFFF, int16 resist_adjust = 0);
 	bool SpellFinished(uint16 spell_id, Mob *target, uint16 slot = 10, uint16 mana_used = 0,
@@ -318,6 +336,8 @@ public:
 	inline void SetShieldEquiped(bool val) { has_shieldequiped = val; }
 	bool HasTwoHandBluntEquiped() const { return has_twohandbluntequiped; }
 	inline void SetTwoHandBluntEquiped(bool val) { has_twohandbluntequiped = val; }
+	bool HasTwoHanderEquipped() { return has_twohanderequipped; }
+	void SetTwoHanderEquipped(bool val) { has_twohanderequipped = val; }
 	virtual uint16 GetSkill(SkillUseTypes skill_num) const { return 0; }
 	virtual uint32 GetEquipment(uint8 material_slot) const { return(0); }
 	virtual int32 GetEquipmentMaterial(uint8 material_slot) const;
@@ -328,7 +348,7 @@ public:
 	bool AffectedBySpellExcludingSlot(int slot, int effect);
 	virtual bool Death(Mob* killerMob, int32 damage, uint16 spell_id, SkillUseTypes attack_skill) = 0;
 	virtual void Damage(Mob* from, int32 damage, uint16 spell_id, SkillUseTypes attack_skill,
-		bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false) = 0;
+		bool avoidable = true, int8 buffslot = -1, bool iBuffTic = false, int special = 0) = 0;
 	inline virtual void SetHP(int32 hp) { if (hp >= max_hp) cur_hp = max_hp; else cur_hp = hp;}
 	bool ChangeHP(Mob* other, int32 amount, uint16 spell_id = 0, int8 buffslot = -1, bool iBuffTic = false);
 	inline void SetOOCRegen(int32 newoocregen) {oocregen = newoocregen;}
@@ -365,7 +385,7 @@ public:
 	inline Mob* GetTarget() const { return target; }
 	virtual void SetTarget(Mob* mob);
 	virtual inline float GetHPRatio() const { return max_hp == 0 ? 0 : ((float)cur_hp/max_hp*100); }
-	virtual inline float GetIntHPRatio() const { return max_hp == 0 ? 0 : (cur_hp/max_hp*100); }
+	virtual inline int GetIntHPRatio() const { return max_hp == 0 ? 0 : static_cast<int>(cur_hp * 100 / max_hp); }
 	inline virtual int32 GetAC() const { return AC + itembonuses.AC + spellbonuses.AC; }
 	inline virtual int32 GetATK() const { return ATK + itembonuses.ATK + spellbonuses.ATK; }
 	inline virtual int32 GetATKBonus() const { return itembonuses.ATK + spellbonuses.ATK; }
@@ -411,6 +431,7 @@ public:
 		((static_cast<float>(cur_mana) / max_mana) * 100); }
 	virtual int32 CalcMaxMana();
 	uint32 GetNPCTypeID() const { return npctype_id; }
+	void SetNPCTypeID(uint32 npctypeid) { npctype_id = npctypeid; }
 	inline const glm::vec4& GetPosition() const { return m_Position; }
 	inline const float GetX() const { return m_Position.x; }
 	inline const float GetY() const { return m_Position.y; }
@@ -725,11 +746,12 @@ public:
 	inline void SetExtraHaste(int Haste) { ExtraHaste = Haste; }
 	virtual int GetHaste();
 
-	uint8 GetWeaponDamageBonus(const Item_Struct* Weapon);
+	uint8 GetWeaponDamageBonus(const Item_Struct* weapon, bool offhand = false);
 	uint16 GetDamageTable(SkillUseTypes skillinuse);
 	virtual int GetMonkHandToHandDamage(void);
 
 	bool CanThisClassDoubleAttack(void) const;
+	bool CanThisClassTripleAttack() const;
 	bool CanThisClassDualWield(void) const;
 	bool CanThisClassRiposte(void) const;
 	bool CanThisClassDodge(void) const;
@@ -858,9 +880,8 @@ public:
 	bool Charmed() const { return charmed; }
 	static uint32 GetLevelHP(uint8 tlevel);
 	uint32 GetZoneID() const; //for perl
-	virtual int32 CheckAggroAmount(uint16 spell_id, bool isproc = false);
-	virtual int32 CheckHealAggroAmount(uint16 spell_id, uint32 heal_possible = 0);
-	virtual uint32 GetAA(uint32 aa_id) const { return(0); }
+	virtual int32 CheckAggroAmount(uint16 spell_id, Mob *target, bool isproc = false);
+	virtual int32 CheckHealAggroAmount(uint16 spell_id, Mob *target, uint32 heal_possible = 0);
 
 	uint32 GetInstrumentMod(uint16 spell_id) const;
 	int CalcSpellEffectValue(uint16 spell_id, int effect_id, int caster_level = 1, uint32 instrument_mod = 10, Mob *caster = nullptr, int ticsremaining = 0);
@@ -956,8 +977,21 @@ public:
 	void Tune_FindAccuaryByHitChance(Mob* defender, Mob *attacker, float hit_chance, int interval, int max_loop, int avoid_override, int Msg = 0);
 	void Tune_FindAvoidanceByHitChance(Mob* defender, Mob *attacker, float hit_chance, int interval, int max_loop, int acc_override, int Msg = 0);
 
+	//aa new
+	uint32 GetAA(uint32 rank_id, uint32 *charges = nullptr) const;
+	uint32 GetAAByAAID(uint32 aa_id, uint32 *charges = nullptr) const;
+	bool SetAA(uint32 rank_id, uint32 new_value, uint32 charges = 0);
+	void ClearAAs() { aa_ranks.clear(); }
+	bool CanUseAlternateAdvancementRank(AA::Rank *rank);
+	bool CanPurchaseAlternateAdvancementRank(AA::Rank *rank, bool check_price, bool check_grant);
+	int GetAlternateAdvancementCooldownReduction(AA::Rank *rank_in);
+	void ExpendAlternateAdvancementCharge(uint32 aa_id);
+	void CalcAABonuses(StatBonuses* newbon);
+	void ApplyAABonuses(const AA::Rank &rank, StatBonuses* newbon);
+	bool CheckAATimer(int timer);
+
 protected:
-	void CommonDamage(Mob* other, int32 &damage, const uint16 spell_id, const SkillUseTypes attack_skill, bool &avoidable, const int8 buffslot, const bool iBuffTic);
+	void CommonDamage(Mob* other, int32 &damage, const uint16 spell_id, const SkillUseTypes attack_skill, bool &avoidable, const int8 buffslot, const bool iBuffTic, int special = 0);
 	static uint16 GetProcID(uint16 spell_id, uint8 effect_index);
 	float _GetMovementSpeed(int mod) const;
 	int _GetWalkSpeed() const;
@@ -968,7 +1002,6 @@ protected:
 	virtual bool AI_EngagedCastCheck() { return(false); }
 	virtual bool AI_PursueCastCheck() { return(false); }
 	virtual bool AI_IdleCastCheck() { return(false); }
-
 
 	bool IsFullHP;
 	bool moved;
@@ -1145,6 +1178,7 @@ protected:
 	uint32 casting_spell_timer_duration;
 	uint32 casting_spell_type;
 	int16 casting_spell_resist_adjust;
+	uint32 casting_spell_aa_id;
 	bool casting_spell_checks;
 	uint16 bardsong;
 	uint8 bardsong_slot;
@@ -1191,6 +1225,7 @@ protected:
 	bool offhand;
 	bool has_shieldequiped;
 	bool has_twohandbluntequiped;
+	bool has_twohanderequipped;
 	bool has_numhits;
 	bool has_MGB;
 	bool has_ProjectIllusion;
@@ -1310,6 +1345,9 @@ protected:
 	SpecialAbility SpecialAbilities[MAX_SPECIAL_ATTACK];
 	bool bEnraged;
 	bool destructibleobject;
+
+	std::unordered_map<uint32, std::pair<uint32, uint32>> aa_ranks;
+	Timer aa_timers[aaTimerMax];
 
 private:
 	void _StopSong(); //this is not what you think it is

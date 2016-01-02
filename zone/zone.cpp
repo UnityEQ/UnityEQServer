@@ -69,7 +69,6 @@ extern bool staticzone;
 extern NetConnection net;
 extern PetitionList petition_list;
 extern QuestParserCollection* parse;
-extern uint16 adverrornum;
 extern uint32 numclients;
 extern WorldServer worldserver;
 extern Zone* zone;
@@ -807,8 +806,6 @@ Zone::Zone(uint32 in_zoneid, uint32 in_instanceid, const char* in_short_name)
 	weather_intensity = 0;
 	blocked_spells = nullptr;
 	totalBS = 0;
-	aas = nullptr;
-	totalAAs = 0;
 	zone_has_current_time = false;
 
 	Instance_Shutdown_Timer = nullptr;
@@ -867,16 +864,6 @@ Zone::~Zone() {
 	safe_delete(qGlobals);
 	safe_delete_array(adv_data);
 	safe_delete_array(map_name);
-
-	if(aas != nullptr) {
-		int r;
-		for(r = 0; r < totalAAs; r++) {
-			uchar *data = (uchar *) aas[r];
-			safe_delete_array(data);
-		}
-		safe_delete_array(aas);
-	}
-
 	safe_delete(GuildBanks);
 }
 
@@ -955,16 +942,12 @@ bool Zone::Init(bool iStaticZone) {
 	zone->LoadAlternateCurrencies();
 	zone->LoadNPCEmotes(&NPCEmoteList);
 
-	//Load AA information
-	adverrornum = 500;
-	LoadAAs();
+	LoadAlternateAdvancement();
 
 	//Load merchant data
-	adverrornum = 501;
 	zone->GetMerchantDataForZoneLoad();
 
 	//Load temporary merchant data
-	adverrornum = 502;
 	zone->LoadTempMerchantData();
 
 	// Merc data
@@ -976,7 +959,6 @@ bool Zone::Init(bool iStaticZone) {
 	if (RuleB(Zone, LevelBasedEXPMods))
 		zone->LoadLevelEXPMods();
 
-	adverrornum = 503;
 	petition_list.ClearPetitions();
 	petition_list.ReadDatabase();
 
@@ -1366,7 +1348,6 @@ void Zone::ChangeWeather()
 
 			weathertimer = (duration*60)*1000;
 			Weather_Timer->Start(weathertimer);
-			zone->zone_weather = 0;
 			zone->weather_intensity = 0;
 		}
 		else if(tmpOldWeather == 2)
@@ -1378,7 +1359,6 @@ void Zone::ChangeWeather()
 
 			weathertimer = (duration*60)*1000;
 			Weather_Timer->Start(weathertimer);
-			zone->zone_weather = 0;
 			zone->weather_intensity = 0;
 		}
 	}
@@ -1397,6 +1377,10 @@ void Zone::ChangeWeather()
 	{
 		Log.Out(Logs::General, Logs::None, "The weather for zone: %s has changed. Old weather was = %i. New weather is = %i The next check will be in %i seconds. Rain chance: %i, Rain duration: %i, Snow chance %i, Snow duration: %i", zone->GetShortName(), tmpOldWeather, zone_weather,Weather_Timer->GetRemainingTime()/1000,rainchance,rainduration,snowchance,snowduration);
 		this->weatherSend();
+		if (zone->weather_intensity == 0)
+		{
+			zone->zone_weather = 0;
+		}
 	}
 }
 

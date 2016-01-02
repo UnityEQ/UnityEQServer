@@ -344,7 +344,7 @@ bool NPC::AIDoSpellCast(uint8 i, Mob* tar, int32 mana_cost, uint32* oDontDoAgain
 		SetCurrentSpeed(0);
 	}
 
-	return CastSpell(AIspells[i].spellid, tar->GetID(), 1, AIspells[i].manacost == -2 ? 0 : -1, mana_cost, oDontDoAgainBefore, -1, -1, 0, 0, &(AIspells[i].resist_adjust));
+	return CastSpell(AIspells[i].spellid, tar->GetID(), 1, AIspells[i].manacost == -2 ? 0 : -1, mana_cost, oDontDoAgainBefore, -1, -1, 0, &(AIspells[i].resist_adjust));
 }
 
 bool EntityList::AICheckCloseBeneficialSpells(NPC* caster, uint8 iChance, float iRange, uint16 iSpellTypes) {
@@ -774,7 +774,10 @@ void Client::AI_Process()
 				engaged = true;
 			} else {
 				if(AImovement_timer->Check()) {
-					//animation = GetFearSpeed() * 21;
+					int speed = GetFearSpeed();
+					animation = speed;
+					speed *= 2;
+					SetCurrentSpeed(speed);
 					// Check if we have reached the last fear point
 					if ((std::abs(GetX() - m_FearWalkTarget.x) < 0.1) &&
 					    (std::abs(GetY() - m_FearWalkTarget.y) < 0.1)) {
@@ -782,18 +785,18 @@ void Client::AI_Process()
 						CalculateNewFearpoint();
 					}
 					if(!RuleB(Pathing, Fear) || !zone->pathing)
-						CalculateNewPosition2(m_FearWalkTarget.x, m_FearWalkTarget.y, m_FearWalkTarget.z, GetFearSpeed(), true);
+						CalculateNewPosition2(m_FearWalkTarget.x, m_FearWalkTarget.y, m_FearWalkTarget.z, speed, true);
 					else
 					{
 						bool WaypointChanged, NodeReached;
 
 						glm::vec3 Goal = UpdatePath(m_FearWalkTarget.x, m_FearWalkTarget.y, m_FearWalkTarget.z,
-									GetFearSpeed(), WaypointChanged, NodeReached);
+									speed, WaypointChanged, NodeReached);
 
 						if(WaypointChanged)
 							tar_ndx = 20;
 
-						CalculateNewPosition2(Goal.x, Goal.y, Goal.z, GetFearSpeed());
+						CalculateNewPosition2(Goal.x, Goal.y, Goal.z, speed);
 					}
 				}
 				return;
@@ -826,118 +829,45 @@ void Client::AI_Process()
 
 		bool is_combat_range = CombatRange(GetTarget());
 
-		if(is_combat_range) {
-			if(charm_class_attacks_timer.Check()) {
+		if (is_combat_range) {
+			if (charm_class_attacks_timer.Check()) {
 				DoClassAttacks(GetTarget());
 			}
 
 			if (AImovement_timer->Check()) {
-				if(CalculateHeadingToTarget(GetTarget()->GetX(), GetTarget()->GetY()) != m_Position.w)
-				{
+				if (CalculateHeadingToTarget(GetTarget()->GetX(), GetTarget()->GetY()) !=
+				    m_Position.w) {
 					SetHeading(CalculateHeadingToTarget(GetTarget()->GetX(), GetTarget()->GetY()));
 					SendPosition();
 				}
 				SetCurrentSpeed(0);
 			}
-			if(GetTarget() && !IsStunned() && !IsMezzed() && !GetFeigned()) {
-				if(attack_timer.Check()) {
-					Attack(GetTarget(), MainPrimary);
-					if(GetTarget()) {
-						if(CheckDoubleAttack()) {
-							Attack(GetTarget(), MainPrimary);
-							if(GetTarget()) {
-								bool triple_attack_success = false;
-								if((((GetClass() == MONK || GetClass() == WARRIOR || GetClass() == RANGER || GetClass() == BERSERKER)
-									&& GetLevel() >= 60) || GetSpecialAbility(SPECATK_TRIPLE))
-									&& CheckDoubleAttack(true))
-								{
-									Attack(GetTarget(), MainPrimary, true);
-									triple_attack_success = true;
-								}
-
-								if(GetTarget())
-								{
-									//Live AA - Flurry, Rapid Strikes ect (Flurry does not require Triple Attack).
-									int16 flurrychance = aabonuses.FlurryChance + spellbonuses.FlurryChance + itembonuses.FlurryChance;
-
-									if (flurrychance)
-									{
-										if(zone->random.Roll(flurrychance))
-										{
-											Message_StringID(MT_NPCFlurry, YOU_FLURRY);
-											Attack(GetTarget(), MainPrimary, false);
-											Attack(GetTarget(), MainPrimary, false);
-										}
-									}
-
-									int16 ExtraAttackChanceBonus = spellbonuses.ExtraAttackChance + itembonuses.ExtraAttackChance + aabonuses.ExtraAttackChance;
-
-									if (ExtraAttackChanceBonus && GetTarget()) {
-										ItemInst *wpn = GetInv().GetItem(MainPrimary);
-										if(wpn){
-											if(wpn->GetItem()->ItemType == ItemType2HSlash ||
-												wpn->GetItem()->ItemType == ItemType2HBlunt ||
-												wpn->GetItem()->ItemType == ItemType2HPiercing )
-											{
-												if(zone->random.Roll(ExtraAttackChanceBonus))
-												{
-													Attack(GetTarget(), MainPrimary, false);
-												}
-											}
-										}
-									}
-
-									if (GetClass() == WARRIOR || GetClass() == BERSERKER)
-									{
-										if(!dead && !berserk && this->GetHPRatio() < 30)
-										{
-											entity_list.MessageClose_StringID(this, false, 200, 0, BERSERK_START, GetName());
-											berserk = true;
-										}
-										else if (berserk && this->GetHPRatio() > 30)
-										{
-											entity_list.MessageClose_StringID(this, false, 200, 0, BERSERK_END, GetName());
-											berserk = false;
-										}
-									}
-								}
-							}
-						}
-					}
+			if (GetTarget() && !IsStunned() && !IsMezzed() && !GetFeigned()) {
+				if (attack_timer.Check()) {
+					// Should charmed clients not be procing?
+					DoAttackRounds(GetTarget(), MainPrimary);
 				}
 			}
 
-			if(CanThisClassDualWield() && attack_dw_timer.Check())
-			{
-				if(GetTarget())
-				{
-					float DualWieldProbability = 0.0f;
-
-					int16 Ambidexterity = aabonuses.Ambidexterity + spellbonuses.Ambidexterity + itembonuses.Ambidexterity;
-					DualWieldProbability = (GetSkill(SkillDualWield) + GetLevel() + Ambidexterity) / 400.0f; // 78.0 max
-					int16 DWBonus = spellbonuses.DualWieldChance + itembonuses.DualWieldChance;
-					DualWieldProbability += DualWieldProbability*float(DWBonus)/ 100.0f;
-
-					if(zone->random.Roll(DualWieldProbability))
-					{
-						Attack(GetTarget(), MainSecondary);
-						if(CheckDoubleAttack())
-						{
-							Attack(GetTarget(), MainSecondary);
-						}
-
+			if (CanThisClassDualWield() && GetTarget() && !IsStunned() && !IsMezzed() && !GetFeigned()) {
+				if (attack_dw_timer.Check()) {
+					if (CheckDualWield()) {
+						// Should charmed clients not be procing?
+						DoAttackRounds(GetTarget(), MainSecondary);
 					}
 				}
 			}
-		}
-		else
-		{
+		} else {
 			if(!IsRooted())
 			{
 				if(AImovement_timer->Check())
 				{
+					int newspeed = GetRunspeed();
+					animation = newspeed;
+					newspeed *= 2;
+					SetCurrentSpeed(newspeed);
 					if(!RuleB(Pathing, Aggro) || !zone->pathing)
-						CalculateNewPosition2(GetTarget()->GetX(), GetTarget()->GetY(), GetTarget()->GetZ(), GetRunspeed());
+						CalculateNewPosition2(GetTarget()->GetX(), GetTarget()->GetY(), GetTarget()->GetZ(), newspeed);
 					else
 					{
 						bool WaypointChanged, NodeReached;
@@ -947,7 +877,7 @@ void Client::AI_Process()
 						if(WaypointChanged)
 							tar_ndx = 20;
 
-						CalculateNewPosition2(Goal.x, Goal.y, Goal.z, GetRunspeed());
+						CalculateNewPosition2(Goal.x, Goal.y, Goal.z, newspeed);
 					}
 				}
 			}
@@ -991,11 +921,12 @@ void Client::AI_Process()
 			{
 				if(AImovement_timer->Check())
 				{
-					int speed = GetWalkspeed();
-					if (dist >= 5625)
-						speed = GetRunspeed();
-							
-					CalculateNewPosition2(owner->GetX(), owner->GetY(), owner->GetZ(), speed);
+					int nspeed = (dist >= 5625 ? GetRunspeed() : GetWalkspeed());
+					animation = nspeed;
+					nspeed *= 2;
+					SetCurrentSpeed(nspeed);
+
+					CalculateNewPosition2(owner->GetX(), owner->GetY(), owner->GetZ(), nspeed);
 				}
 			}
 			else
@@ -1172,43 +1103,9 @@ void Mob::AI_Process() {
 
 				//try main hand first
 				if(attack_timer.Check()) {
-					if(IsNPC()) {
-						int16 n_atk = CastToNPC()->GetNumberOfAttacks();
-						if(n_atk <= 1) {
-							Attack(target, MainPrimary);
-						} else {
-							for(int i = 0; i < n_atk; ++i) {
-								Attack(target, MainPrimary);
-							}
-						}
-					} else {
-						Attack(target, MainPrimary);
-					}
+					DoMainHandAttackRounds(target);
 
-					if (target) {
-						//we use this random value in three comparisons with different
-						//thresholds, and if its truely random, then this should work
-						//out reasonably and will save us compute resources.
-						int32 RandRoll = zone->random.Int(0, 99);
-						if ((CanThisClassDoubleAttack() || GetSpecialAbility(SPECATK_TRIPLE)
-								|| GetSpecialAbility(SPECATK_QUAD))
-								//check double attack, this is NOT the same rules that clients use...
-								&& RandRoll < (GetLevel() + NPCDualAttackModifier)) {
-							Attack(target, MainPrimary);
-							// lets see if we can do a triple attack with the main hand
-							//pets are excluded from triple and quads...
-							if ((GetSpecialAbility(SPECATK_TRIPLE) || GetSpecialAbility(SPECATK_QUAD))
-									&& !IsPet() && RandRoll < (GetLevel() + NPCTripleAttackModifier)) {
-								Attack(target, MainPrimary);
-								// now lets check the quad attack
-								if (GetSpecialAbility(SPECATK_QUAD)
-										&& RandRoll < (GetLevel() + NPCQuadAttackModifier)) {
-									Attack(target, MainPrimary);
-								}
-							}
-						}
-					}
-
+					bool specialed = false; // NPCs can only do one of these a round
 					if (GetSpecialAbility(SPECATK_FLURRY)) {
 						int flurry_chance = GetSpecialAbilityParam(SPECATK_FLURRY, 0);
 						flurry_chance = flurry_chance > 0 ? flurry_chance : RuleI(Combat, NPCFlurryChance);
@@ -1240,19 +1137,16 @@ void Mob::AI_Process() {
 								opts.crit_flat = cur;
 
 							Flurry(&opts);
+							specialed = true;
 						}
 					}
 
-					if (IsPet() || (IsNPC() && CastToNPC()->GetSwarmOwner())) {
+					if (IsPet() || IsTempPet()) {
 						Mob *owner = nullptr;
-
-						if (IsPet())
-							owner = GetOwner();
-						else
-							owner = entity_list.GetMobID(CastToNPC()->GetSwarmOwner());
+						owner = GetOwner();
 
 						if (owner) {
-						int16 flurry_chance = owner->aabonuses.PetFlurry +
+							int16 flurry_chance = owner->aabonuses.PetFlurry +
 							owner->spellbonuses.PetFlurry + owner->itembonuses.PetFlurry;
 
 							if (flurry_chance && zone->random.Roll(flurry_chance))
@@ -1260,7 +1154,19 @@ void Mob::AI_Process() {
 						}
 					}
 
-					if (GetSpecialAbility(SPECATK_RAMPAGE))
+					if ((IsPet() || IsTempPet()) && IsPetOwnerClient()){
+						if (spellbonuses.PC_Pet_Rampage[0] || itembonuses.PC_Pet_Rampage[0] || aabonuses.PC_Pet_Rampage[0]){
+							int chance = spellbonuses.PC_Pet_Rampage[0] + itembonuses.PC_Pet_Rampage[0] + aabonuses.PC_Pet_Rampage[0];
+							int dmg_mod = spellbonuses.PC_Pet_Rampage[1] + itembonuses.PC_Pet_Rampage[1] + aabonuses.PC_Pet_Rampage[1];
+							if(zone->random.Roll(chance)) {
+								ExtraAttackOptions opts;
+								opts.damage_percent = dmg_mod / 100.0f;
+								Rampage(&opts);
+							}
+						}
+					}
+
+					if (GetSpecialAbility(SPECATK_RAMPAGE) && !specialed)
 					{
 						int rampage_chance = GetSpecialAbilityParam(SPECATK_RAMPAGE, 0);
 						rampage_chance = rampage_chance > 0 ? rampage_chance : 20;
@@ -1296,10 +1202,11 @@ void Mob::AI_Process() {
 								opts.crit_flat = cur;
 							}
 							Rampage(&opts);
+							specialed = true;
 						}
 					}
 
-					if (GetSpecialAbility(SPECATK_AREA_RAMPAGE))
+					if (GetSpecialAbility(SPECATK_AREA_RAMPAGE) && !specialed)
 					{
 						int rampage_chance = GetSpecialAbilityParam(SPECATK_AREA_RAMPAGE, 0);
 						rampage_chance = rampage_chance > 0 ? rampage_chance : 20;
@@ -1336,34 +1243,19 @@ void Mob::AI_Process() {
 							}
 
 							AreaRampage(&opts);
+							specialed = true;
 						}
 					}
 				}
 
 				//now off hand
 				if (attack_dw_timer.Check() && CanThisClassDualWield())
-				{
-					int myclass = GetClass();
-					//can only dual wield without a weapon if your a monk
-					if(GetSpecialAbility(SPECATK_INNATE_DW) || (GetEquipment(MaterialSecondary) != 0 && GetLevel() > 29) || myclass == MONK || myclass == MONKGM) {
-						float DualWieldProbability = (GetSkill(SkillDualWield) + GetLevel()) / 400.0f;
-						if(zone->random.Roll(DualWieldProbability))
-						{
-							Attack(target, MainSecondary);
-							if (CanThisClassDoubleAttack())
-							{
-								if (zone->random.Roll(GetLevel() + 20))
-								{
-									Attack(target, MainSecondary);
-								}
-							}
-						}
-					}
-				}
+					DoOffHandAttackRounds(target);
 
 				//now special attacks (kick, etc)
 				if(IsNPC())
 					CastToNPC()->DoClassAttacks(target);
+
 			}
 			AI_EngagedCastCheck();
 		}	//end is within combat rangepet
@@ -1496,7 +1388,7 @@ void Mob::AI_Process() {
 							int speed = GetWalkspeed();
 							if (dist >= 5625)
 								speed = GetRunspeed();
-							
+
 							CalculateNewPosition2(owner->GetX(), owner->GetY(), owner->GetZ(), speed);
 						}
 						else
@@ -2115,14 +2007,14 @@ bool Mob::Rampage(ExtraAttackOptions *opts)
 			if (m_target == GetTarget())
 				continue;
 			if (CombatRange(m_target)) {
-				Attack(m_target, MainPrimary, false, false, false, opts);
+				ProcessAttackRounds(m_target, opts, 2);
 				index_hit++;
 			}
 		}
 	}
 
 	if (RuleB(Combat, RampageHitsTarget) && index_hit < rampage_targets)
-		Attack(GetTarget(), MainPrimary, false, false, false, opts);
+		ProcessAttackRounds(GetTarget(), opts, 2);
 
 	return true;
 }
@@ -2137,12 +2029,11 @@ void Mob::AreaRampage(ExtraAttackOptions *opts)
 	}
 
 	int rampage_targets = GetSpecialAbilityParam(SPECATK_AREA_RAMPAGE, 1);
-	rampage_targets = rampage_targets > 0 ? rampage_targets : 1;
+	rampage_targets = rampage_targets > 0 ? rampage_targets : -1;
 	index_hit = hate_list.AreaRampage(this, GetTarget(), rampage_targets, opts);
 
-	if(index_hit == 0) {
-		Attack(GetTarget(), MainPrimary, false, false, false, opts);
-	}
+	if(index_hit == 0)
+		ProcessAttackRounds(GetTarget(), opts, 1);
 }
 
 uint32 Mob::GetLevelCon(uint8 mylevel, uint8 iOtherLevel) {
@@ -2633,6 +2524,10 @@ void NPC::AddSpellToNPCList(int16 iPriority, int16 iSpellID, uint16 iType,
 	t.resist_adjust = iResistAdjust;
 
 	AIspells.push_back(t);
+
+	// If we're going from an empty list, we need to start the timer
+	if (AIspells.size() == 1)
+		AIautocastspell_timer->Start(RandomTimer(0, 15000), false);
 }
 
 void NPC::RemoveSpellFromNPCList(int16 spell_id)

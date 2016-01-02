@@ -107,7 +107,7 @@ void ClientList::EnforceSessionLimit(uint32 iLSAccountID) {
 
 		ClientEntry = iterator.GetData();
 
-		if ((ClientEntry->LSAccountID() == iLSAccountID) &&
+		if ((ClientEntry->AccountID() == iLSAccountID) &&
 			((ClientEntry->Admin() <= (RuleI(World, ExemptAccountLimitStatus))) || (RuleI(World, ExemptAccountLimitStatus) < 0))) {
 
 			CharacterCount++;
@@ -428,6 +428,7 @@ ClientListEntry* ClientList::CheckAuth(const char* iName, const char* iPassword)
 	//Log.LogDebugType(Logs::Detail, Logs::World_Server,"Login with '%s' and '%s'", iName, iPassword);
 
 	uint32 accid = database.CheckLogin(iName, iPassword, &tmpadmin);
+
 	if (accid) {
 		uint32 lsid = 0;
 		database.GetAccountIDByName(iName, &tmpadmin, &lsid);

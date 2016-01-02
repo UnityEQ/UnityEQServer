@@ -22,8 +22,10 @@ Child of the Mob class.
 */
 
 #ifdef _WINDOWS
-    #define snprintf	_snprintf
-	#define vsnprintf	_vsnprintf
+	#if (!defined(_MSC_VER) || (defined(_MSC_VER) && _MSC_VER < 1900))
+		#define snprintf	_snprintf
+		#define vsnprintf	_vsnprintf
+	#endif
     #define strncasecmp	_strnicmp
     #define strcasecmp	_stricmp
 #endif
@@ -843,7 +845,7 @@ bool Corpse::Process() {
 				Save();
 				player_corpse_depop = true;
 				corpse_db_id = 0;
-				Log.Out(Logs::General, Logs::None, "Tagged %s player corpse has burried.", this->GetName());
+				Log.Out(Logs::General, Logs::None, "Tagged %s player corpse has buried.", this->GetName());
 			}
 			else {
 				Log.Out(Logs::General, Logs::Error, "Unable to bury %s player corpse.", this->GetName());

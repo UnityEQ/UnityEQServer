@@ -350,6 +350,11 @@ const char *Lua_Client::AccountName() {
 	return self->AccountName();
 }
 
+int Lua_Client::GetAccountAge() {
+	Lua_Safe_Call_Int();
+	return time(nullptr) - self->GetAccountCreation();
+}
+
 int Lua_Client::Admin() {
 	Lua_Safe_Call_Bool();
 	return self->Admin();
@@ -1024,7 +1029,17 @@ void Lua_Client::AddLevelBasedExp(int exp_pct, int max_level) {
 
 void Lua_Client::IncrementAA(int aa) {
 	Lua_Safe_Call_Void();
-	self->IncrementAA(aa);
+	self->IncrementAlternateAdvancementRank(aa);
+}
+
+bool Lua_Client::GrantAlternateAdvancementAbility(int aa_id, int points) {
+	Lua_Safe_Call_Bool();
+	self->GrantAlternateAdvancementAbility(aa_id, points);
+}
+
+bool Lua_Client::GrantAlternateAdvancementAbility(int aa_id, int points, bool ignore_cost) {
+	Lua_Safe_Call_Bool();
+	self->GrantAlternateAdvancementAbility(aa_id, points, ignore_cost);
 }
 
 void Lua_Client::MarkSingleCompassLoc(float in_x, float in_y, float in_z) {
@@ -1060,6 +1075,11 @@ void Lua_Client::UpdateTaskActivity(int task, int activity, int count) {
 void Lua_Client::AssignTask(int task, int npc_id) {
 	Lua_Safe_Call_Void();
 	self->AssignTask(task, npc_id);
+}
+
+void Lua_Client::AssignTask(int task, int npc_id, bool enforce_level_requirement) {
+	Lua_Safe_Call_Void();
+	self->AssignTask(task, npc_id, enforce_level_requirement);
 }
 
 void Lua_Client::FailTask(int task) {
@@ -1295,6 +1315,11 @@ void Lua_Client::QuestReward(Lua_Mob target, uint32 copper, uint32 silver, uint3
 	self->QuestReward(target, copper, silver, gold, platinum, itemid, exp, faction);
 }
 
+uint32 Lua_Client::GetMoney(uint8 type, uint8 subtype) {
+	Lua_Safe_Call_Int();
+	return self->GetMoney(type, subtype);
+}
+
 luabind::scope lua_register_client() {
 	return luabind::class_<Lua_Client, Lua_Mob>("Client")
 		.def(luabind::constructor<>())
@@ -1365,6 +1390,7 @@ luabind::scope lua_register_client() {
 		.def("GetRawItemAC", (int(Lua_Client::*)(void))&Lua_Client::GetRawItemAC)
 		.def("AccountID", (uint32(Lua_Client::*)(void))&Lua_Client::AccountID)
 		.def("AccountName", (const char *(Lua_Client::*)(void))&Lua_Client::AccountName)
+		.def("GetAccountAge", (int(Lua_Client::*)(void))&Lua_Client::GetAccountAge)
 		.def("Admin", (int(Lua_Client::*)(void))&Lua_Client::Admin)
 		.def("CharacterID", (uint32(Lua_Client::*)(void))&Lua_Client::CharacterID)
 		.def("GuildRank", (int(Lua_Client::*)(void))&Lua_Client::GuildRank)
@@ -1500,6 +1526,8 @@ luabind::scope lua_register_client() {
 		.def("AddLevelBasedExp", (void(Lua_Client::*)(int))&Lua_Client::AddLevelBasedExp)
 		.def("AddLevelBasedExp", (void(Lua_Client::*)(int,int))&Lua_Client::AddLevelBasedExp)
 		.def("IncrementAA", (void(Lua_Client::*)(int))&Lua_Client::IncrementAA)
+		.def("GrantAlternateAdvancementAbility", (bool(Lua_Client::*)(int, int))&Lua_Client::GrantAlternateAdvancementAbility)
+		.def("GrantAlternateAdvancementAbility", (bool(Lua_Client::*)(int, int, bool))&Lua_Client::GrantAlternateAdvancementAbility)
 		.def("MarkSingleCompassLoc", (void(Lua_Client::*)(float,float,float))&Lua_Client::MarkSingleCompassLoc)
 		.def("MarkSingleCompassLoc", (void(Lua_Client::*)(float,float,float,int))&Lua_Client::MarkSingleCompassLoc)
 		.def("GetNextAvailableSpellBookSlot", (int(Lua_Client::*)(void))&Lua_Client::GetNextAvailableSpellBookSlot)
@@ -1507,6 +1535,7 @@ luabind::scope lua_register_client() {
 		.def("FindSpellBookSlotBySpellID", (int(Lua_Client::*)(int))&Lua_Client::FindSpellBookSlotBySpellID)
 		.def("UpdateTaskActivity", (void(Lua_Client::*)(int,int,int))&Lua_Client::UpdateTaskActivity)
 		.def("AssignTask", (void(Lua_Client::*)(int,int))&Lua_Client::AssignTask)
+		.def("AssignTask", (void(Lua_Client::*)(int,int,bool))&Lua_Client::AssignTask)
 		.def("FailTask", (void(Lua_Client::*)(int))&Lua_Client::FailTask)
 		.def("IsTaskCompleted", (bool(Lua_Client::*)(int))&Lua_Client::IsTaskCompleted)
 		.def("IsTaskActive", (bool(Lua_Client::*)(int))&Lua_Client::IsTaskActive)
@@ -1552,7 +1581,8 @@ luabind::scope lua_register_client() {
 		.def("QuestReward", (void(Lua_Client::*)(Lua_Mob, uint32, uint32, uint32, uint32))&Lua_Client::QuestReward)
 		.def("QuestReward", (void(Lua_Client::*)(Lua_Mob, uint32, uint32, uint32, uint32, uint32))&Lua_Client::QuestReward)
 		.def("QuestReward", (void(Lua_Client::*)(Lua_Mob, uint32, uint32, uint32, uint32, uint32, uint32))&Lua_Client::QuestReward)
-		.def("QuestReward", (void(Lua_Client::*)(Lua_Mob, uint32, uint32, uint32, uint32, uint32, uint32, bool))&Lua_Client::QuestReward);
+		.def("QuestReward", (void(Lua_Client::*)(Lua_Mob, uint32, uint32, uint32, uint32, uint32, uint32, bool))&Lua_Client::QuestReward)
+		.def("GetMoney", (uint32(Lua_Client::*)(uint8, uint8))&Lua_Client::GetMoney);
 }
 
 luabind::scope lua_register_inventory_where() {

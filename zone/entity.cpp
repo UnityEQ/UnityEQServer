@@ -61,7 +61,6 @@ extern uint32 numclients;
 extern PetitionList petition_list;
 
 extern char errorname[32];
-extern uint16 adverrornum;
 
 Entity::Entity()
 {
@@ -1393,7 +1392,7 @@ void EntityList::RefreshAutoXTargets(Client *c)
 			continue;
 
 		if (m->CheckAggro(c) && !c->IsXTarget(m)) {
-			c->AddAutoXTarget(m);
+			c->AddAutoXTarget(m, false); // we only call this before a bulk, so lets not send right away
 			break;
 		}
 
@@ -3099,56 +3098,24 @@ bool EntityList::Fighting(Mob *targ)
 	return false;
 }
 
-void EntityList::AddHealAggro(Mob *target, Mob *caster, uint16 thedam)
+void EntityList::AddHealAggro(Mob *target, Mob *caster, uint16 hate)
 {
-	NPC *cur = nullptr;
-	uint16 count = 0;
-	std::list<NPC *> npc_sub_list;
-	auto it = npc_list.begin();
-	while (it != npc_list.end()) {
-		cur = it->second;
+	if (hate == 0)
+		return;
 
-		if (!cur->CheckAggro(target)) {
-			++it;
+	for (auto &e : npc_list) {
+		auto &npc = e.second;
+		if (!npc->CheckAggro(target) || npc->IsFeared())
 			continue;
-		}
-		if (!cur->IsMezzed() && !cur->IsStunned() && !cur->IsFeared()) {
-			npc_sub_list.push_back(cur);
-			++count;
-		}
-		++it;
-	}
 
+		if (zone->random.Roll(50)) // witness check -- place holder
+			// This is either a level check (con color check?) or a stat roll
+			continue;
 
-	if (thedam > 1) {
-		if (count > 0)
-			thedam /= count;
-
-		if (thedam < 1)
-			thedam = 1;
-	}
-
-	cur = nullptr;
-	auto sit = npc_sub_list.begin();
-	while (sit != npc_sub_list.end()) {
-		cur = *sit;
-
-		if (cur->IsPet()) {
-			if (caster) {
-				if (cur->CheckAggro(caster)) {
-					cur->AddToHateList(caster, thedam);
-				}
-			}
-		} else {
-			if (caster) {
-				if (cur->CheckAggro(caster)) {
-					cur->AddToHateList(caster, thedam);
-				} else {
-					cur->AddToHateList(caster, thedam * 0.33);
-				}
-			}
-		}
-		++sit;
+		if ((npc->IsMezzed() || npc->IsStunned()) && hate > 4) // patch notes say stunned/mezzed NPCs get a fraction of the hate
+			npc->AddToHateList(caster, hate / 4); // made up number
+		else
+			npc->AddToHateList(caster, hate);
 	}
 }
 
@@ -4733,5 +4700,13 @@ void EntityList::StopMobAI()
 	for (auto &mob : mob_list) {
 		mob.second->AI_Stop();
 		mob.second->AI_ShutDown();
+	}
+}
+
+void EntityList::SendAlternateAdvancementStats() {
+	for(auto &c : client_list) {
+		c.second->SendAlternateAdvancementTable();
+		c.second->SendAlternateAdvancementStats();
+		c.second->SendAlternateAdvancementPoints();
 	}
 }

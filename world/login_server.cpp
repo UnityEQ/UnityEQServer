@@ -147,12 +147,6 @@ bool LoginServer::Process() {
 			case ServerOP_LSClientAuth: {
 				ServerLSClientAuth* slsca = (ServerLSClientAuth*) pack->pBuffer;
 
-				if (RuleI(World, AccountSessionLimit) >= 0) {
-					// Enforce the limit on the number of characters on the same account that can be
-					// online at the same time.
-					client_list.EnforceSessionLimit(slsca->lsaccount_id);
-				}
-
 				client_list.CLEAdd(slsca->lsaccount_id, slsca->name, slsca->key, slsca->worldadmin, slsca->ip, slsca->local);
 				break;
 			}

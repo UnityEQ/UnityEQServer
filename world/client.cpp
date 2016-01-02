@@ -139,6 +139,10 @@ void Client::SendEnterWorld(std::string name)
 	char char_name[64] = { 0 };
 	if (pZoning && database.GetLiveChar(GetAccountID(), char_name)) {
 		if(database.GetAccountIDByChar(char_name) != GetAccountID()) {
+			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+			outapp->pBuffer[0] = 0;
+			QueuePacket(outapp);
+			safe_delete(outapp);
 			eqs->Close();
 			return;
 		} else {
@@ -155,7 +159,13 @@ void Client::SendEnterWorld(std::string name)
 void Client::SendExpansionInfo() {
 	auto outapp = new EQApplicationPacket(OP_ExpansionInfo, sizeof(ExpansionInfo_Struct));
 	ExpansionInfo_Struct *eis = (ExpansionInfo_Struct*)outapp->pBuffer;
-	eis->Expansions = (RuleI(World, ExpansionSettings));
+	if(RuleB(World, UseClientBasedExpansionSettings)) {
+		eis->Expansions = ExpansionFromClientVersion(eqs->GetClientVersion());
+		//eis->Expansions = ExpansionFromClientVersion(this->GetCLE.
+	} else {
+		eis->Expansions = (RuleI(World, ExpansionSettings));
+	}
+
 	QueuePacket(outapp);
 	safe_delete(outapp);
 }
@@ -415,10 +425,6 @@ bool Client::HandleSendLoginInfoPacket(const EQApplicationPacket *app) {
 #ifdef IPBASED_AUTH_HACK
 	if ((cle = zoneserver_list.CheckAuth(inet_ntoa(tmpip), password)))
 #else
-	if (loginserverlist.Connected() == false && !pZoning) {
-		Log.Out(Logs::Detail, Logs::World_Server,"Error: Login server login while not connected to login server.");
-		return false;
-	}
 	if (((cle = client_list.CheckAuth(name, password)) || (cle = client_list.CheckAuth(id, password))))
 #endif
 	{
@@ -473,7 +479,11 @@ bool Client::HandleSendLoginInfoPacket(const EQApplicationPacket *app) {
 	}
 	else {
 		// TODO: Find out how to tell the client wrong username/password
-		Log.Out(Logs::Detail, Logs::World_Server,"Bad/Expired session key '%s'",name);
+		Log.Out(Logs::Detail, Logs::World_Server,"Bad/Expired login for account '%s'",name);
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 1;
+		QueuePacket(outapp);
+		safe_delete(outapp);
 		return false;
 	}
 
@@ -688,6 +698,11 @@ bool Client::HandleCharacterCreatePacket(const EQApplicationPacket *app) {
 bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) { 
 	if (GetAccountID() == 0) {
 		Log.Out(Logs::Detail, Logs::World_Server,"Enter world with no logged in account");
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 0;
+		QueuePacket(outapp);
+		safe_delete(outapp);
+
 		eqs->Close();
 		return true;
 	}
@@ -695,6 +710,12 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 	if(GetAdmin() < 0)
 	{
 		Log.Out(Logs::Detail, Logs::World_Server,"Account banned or suspended.");
+
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 0;
+		QueuePacket(outapp);
+		safe_delete(outapp);
+
 		eqs->Close();
 		return true;
 	}
@@ -711,6 +732,10 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 	charid = database.GetCharacterInfo(char_name, &tmpaccid, &zoneID, &instanceID);
 	if (charid == 0 || tmpaccid != GetAccountID()) {
 		Log.Out(Logs::Detail, Logs::World_Server,"Could not get CharInfo for '%s'",char_name);
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 0;
+		QueuePacket(outapp);
+		safe_delete(outapp);
 		eqs->Close();
 		return true;
 	}
@@ -718,6 +743,10 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 	// Make sure this account owns this character
 	if (tmpaccid != GetAccountID()) {
 		Log.Out(Logs::Detail, Logs::World_Server,"This account does not own the character named '%s'",char_name);
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 0;
+		QueuePacket(outapp);
+		safe_delete(outapp);
 		eqs->Close();
 		return true;
 	}
@@ -761,6 +790,10 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 			else {
 				Log.Out(Logs::Detail, Logs::World_Server, "'%s' is trying to go home before they're able...", char_name);
 				database.SetHackerFlag(GetAccountName(), char_name, "MQGoHome: player tried to go home before they were able.");
+				auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+				outapp->pBuffer[0] = 0;
+				QueuePacket(outapp);
+				safe_delete(outapp);
 				eqs->Close();
 				return true;
 			}
@@ -785,6 +818,10 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 			else {
 				Log.Out(Logs::Detail, Logs::World_Server, "'%s' is trying to go to tutorial but are not allowed...", char_name);
 				database.SetHackerFlag(GetAccountName(), char_name, "MQTutorial: player tried to enter the tutorial without having tutorial enabled for this character.");
+				auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+				outapp->pBuffer[0] = 0;
+				QueuePacket(outapp);
+				safe_delete(outapp);
 				eqs->Close();
 				return true;
 			}
@@ -940,6 +977,10 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 	if (RuleB(World, GMAccountIPList) && this->GetAdmin() >= (RuleI(World, MinGMAntiHackStatus))) {
 		if(!database.CheckGMIPs(long2ip(this->GetIP()).c_str(), this->GetAccountID())) {
 			Log.Out(Logs::Detail, Logs::World_Server,"GM Account not permited from source address %s and accountid %i", long2ip(this->GetIP()).c_str(), this->GetAccountID());
+			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+			outapp->pBuffer[0] = 0;
+			QueuePacket(outapp);
+			safe_delete(outapp);
 			eqs->Close();
 		}
 	}
@@ -996,6 +1037,11 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 		}
 		case OP_WorldComplete:
 		{
+			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+			outapp->pBuffer[0] = 0;
+			QueuePacket(outapp);
+			safe_delete(outapp);
+
 			eqs->Close();
 			return true;
 		}
@@ -1246,30 +1292,39 @@ void Client::Clearance(int8 response)
 		return;
 	}
 
-	// @bp This is the chat server
-	/*
-	char packetData[] = "64.37.148.34.9876,MyServer,Testchar,23cd2c95";
-	outapp = new EQApplicationPacket(OP_0x0282, sizeof(packetData));
-	strcpy((char*)outapp->pBuffer, packetData);
-	QueuePacket(outapp);
-	delete outapp;
-	*/
-
 	// Send zone server IP data
 	outapp = new EQApplicationPacket(OP_ZoneServerInfo, sizeof(ZoneServerInfo_Struct));
 	ZoneServerInfo_Struct* zsi = (ZoneServerInfo_Struct*)outapp->pBuffer;
-	const char *zs_addr=zs->GetCAddress();
-	if (!zs_addr[0]) {
-		if (cle->IsLocalClient()) {
+
+	const char *zs_addr = nullptr;
+	if(cle && cle->IsLocalClient()) {
+		const char *local_addr = zs->GetCLocalAddress();
+
+		if(local_addr[0]) {
+			zs_addr = local_addr;
+		} else {
 			struct in_addr in;
 			in.s_addr = zs->GetIP();
-			zs_addr=inet_ntoa(in);
-			if (!strcmp(zs_addr,"127.0.0.1"))
-				zs_addr=WorldConfig::get()->LocalAddress.c_str();
+			zs_addr = inet_ntoa(in);
+
+			if(strcmp(zs_addr, "127.0.0.1") == 0)
+			{
+				Log.Out(Logs::Detail, Logs::World_Server, "Local zone address was %s, setting local address to: %s", zs_addr, WorldConfig::get()->LocalAddress.c_str());
+				zs_addr = WorldConfig::get()->LocalAddress.c_str();
+			} else {
+				Log.Out(Logs::Detail, Logs::World_Server, "Local zone address %s", zs_addr);
+			}
+		}
+
+	} else {
+		const char *addr = zs->GetCAddress();
+		if(addr[0]) {
+			zs_addr = addr;
 		} else {
-			zs_addr=WorldConfig::get()->WorldAddress.c_str();
+			zs_addr = WorldConfig::get()->WorldAddress.c_str();
 		}
 	}
+
 	strcpy(zsi->ip, zs_addr);
 	zsi->port =zs->GetCPort();
 	Log.Out(Logs::Detail, Logs::World_Server,"Sending client to zone %s (%d:%d) at %s:%d",zonename,zoneID,instanceID,zsi->ip,zsi->port);
@@ -1934,21 +1989,21 @@ void Client::SetRacialLanguages( PlayerProfile_Struct *pp )
 		}
 	case IKSAR:
 		{
-			pp->languages[LANG_COMMON_TONGUE] = 95;
+			pp->languages[LANG_COMMON_TONGUE] = RuleI(Character, IksarCommonTongue);
 			pp->languages[LANG_DARK_SPEECH] = 100;
 			pp->languages[LANG_LIZARDMAN] = 100;
 			break;
 		}
 	case OGRE:
 		{
-			pp->languages[LANG_COMMON_TONGUE] = 95;
+			pp->languages[LANG_COMMON_TONGUE] = RuleI(Character, OgreCommonTongue);
 			pp->languages[LANG_DARK_SPEECH] = 100;
 			pp->languages[LANG_OGRE] = 100;
 			break;
 		}
 	case TROLL:
 		{
-			pp->languages[LANG_COMMON_TONGUE] = 95;
+			pp->languages[LANG_COMMON_TONGUE] = RuleI(Character, TrollCommonTongue);
 			pp->languages[LANG_DARK_SPEECH] = 100;
 			pp->languages[LANG_TROLL] = 100;
 			break;

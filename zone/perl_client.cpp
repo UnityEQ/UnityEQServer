@@ -4077,33 +4077,7 @@ XS(XS_Client_RefundAA) {
 		if(THIS == nullptr)
 			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
 
-		int curpt = 0;
-		bool refunded = false;
-
-		for(int x1=0;x1<aaHighestID;x1++){
-			curpt = THIS->GetAA(x1);
-			if(curpt > 0){
-				SendAA_Struct* curaa = zone->FindAA(x1);
-				if(curaa){
-					THIS->SetAA(x1, 0);
-					for(int x2=0;x2<curpt;x2++){ //add up all the AA points pt by pt to get the correct cost
-						THIS->GetPP().aapoints += curaa->cost + (curaa->cost_inc * x2);
-						refunded = true;
-					}
-				}
-				else //aa doesn't exist.. but if they bought it then it had at least a cost of 1 point each
-				{ //so give back what we can
-					THIS->GetPP().aapoints += curpt;
-					THIS->SetAA(x1, 0);
-					refunded = true;
-				}
-			}
-		}
-
-		if(refunded){
-			THIS->Save(); //save of course
-			THIS->Kick(); //client gets all buggy if we don't immediatly relog so just force it on them
-		}
+		THIS->RefundAA();
 	}
 	XSRETURN_EMPTY;
 }
@@ -4915,9 +4889,42 @@ XS(XS_Client_IncrementAA)
 		if(THIS == nullptr)
 			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
 
-		THIS->IncrementAA(aaskillid);
+		THIS->IncrementAlternateAdvancementRank(aaskillid);
 	}
 	XSRETURN_EMPTY;
+}
+
+XS(XS_Client_GrantAlternateAdvancementAbility); /* prototype to pass -Wmissing-prototypes */
+XS(XS_Client_GrantAlternateAdvancementAbility)
+{
+	dXSARGS;
+	if(items < 3 || items > 4)
+		Perl_croak(aTHX_ "Usage: Client::GrantAlternateAdvancementAbility(THIS, aa_id, points, [ignore_cost])");
+	{
+		Client *		THIS;
+		bool			RETVAL;
+		int			aa_id = (int)SvIV(ST(1));
+		int			points = (int)SvIV(ST(2));
+		bool		ignore_cost = false;
+
+		if(sv_derived_from(ST(0), "Client")) {
+			IV tmp = SvIV((SV*)SvRV(ST(0)));
+			THIS = INT2PTR(Client *, tmp);
+		}
+		else
+			Perl_croak(aTHX_ "THIS is not of type Client");
+		if(THIS == nullptr)
+			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
+
+		if(items > 3) {
+			ignore_cost = (bool)SvTRUE(ST(3));
+		}
+
+		RETVAL = THIS->GrantAlternateAdvancementAbility(aa_id, points, ignore_cost);
+		ST(0) = boolSV(RETVAL);
+		sv_2mortal(ST(0));
+	}
+	XSRETURN(1);
 }
 
 XS(XS_Client_GetAALevel);
@@ -5119,13 +5126,20 @@ XS(XS_Client_AssignTask); /* prototype to pass -Wmissing-prototypes */
 XS(XS_Client_AssignTask)
 {
 	dXSARGS;
-	if (items != 3)
-		Perl_croak(aTHX_ "Usage: Client::AssignTask(THIS, TaskID, NPCID)");
+	if (items != 3 && items != 4)
+		Perl_croak(aTHX_ "Usage: Client::AssignTask(THIS, TaskID, NPCID, enforce_level_requirement)");
 	{
 		Client *	THIS;
 		int		TaskID = (int)SvIV(ST(1));
 		int		NPCID = (int)SvIV(ST(2));
-
+		bool	enforce_level_requirement = false;
+		if (items == 4)
+		{
+			if ((int)SvIV(ST(3)) == 1)
+			{
+				enforce_level_requirement = true;
+			}
+		}
 		if (sv_derived_from(ST(0), "Client")) {
 			IV tmp = SvIV((SV*)SvRV(ST(0)));
 			THIS = INT2PTR(Client *,tmp);
@@ -5135,7 +5149,7 @@ XS(XS_Client_AssignTask)
 		if(THIS == nullptr)
 			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
 
-		THIS->AssignTask(TaskID, NPCID);
+		THIS->AssignTask(TaskID, NPCID, enforce_level_requirement);
 	}
 	XSRETURN_EMPTY;
 }
@@ -6266,6 +6280,62 @@ XS(XS_Client_QuestReward)
 	XSRETURN_EMPTY;
 }
 
+XS(XS_Client_GetMoney);
+XS(XS_Client_GetMoney)
+{
+	dXSARGS;
+	if (items != 3)
+		Perl_croak(aTHX_ "Usage: GetMoney(THIS, type, subtype)");
+	{
+		Client* THIS;
+		uint32 RETVAL;
+		uint8 type = (uint8)SvUV(ST(1));
+		uint8 subtype = (uint8)SvUV(ST(2));
+		dXSTARG;
+
+		if (sv_derived_from(ST(0), "Client")) {
+			IV tmp = SvIV((SV*)SvRV(ST(0)));
+			THIS = INT2PTR(Client *,tmp);
+		}
+		else
+			Perl_croak(aTHX_ "THIS is not of type Client");
+		
+		if(THIS == nullptr)
+			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
+
+		RETVAL = THIS->GetMoney(type, subtype);
+		XSprePUSH; PUSHn((uint32)RETVAL);
+	}
+	XSRETURN(1);
+}
+
+XS(XS_Client_GetAccountAge);
+XS(XS_Client_GetAccountAge) {
+	dXSARGS;
+	if (items != 1)
+		Perl_croak(aTHX_ "Usage: GetAccountAge(THIS)");
+	{
+		Client* THIS;
+		int RETVAL;
+		dXSTARG;
+
+		if (sv_derived_from(ST(0), "Client")) {
+			IV tmp = SvIV((SV*)SvRV(ST(0)));
+			THIS = INT2PTR(Client *,tmp);
+		}
+		else
+			Perl_croak(aTHX_ "THIS is not of type Client");
+		
+		if(THIS == nullptr)
+			Perl_croak(aTHX_ "THIS is nullptr, avoiding crash.");
+
+		RETVAL = THIS->GetAccountAge();
+		XSprePUSH; PUSHn((int)RETVAL);		
+	}
+	XSRETURN(1);
+}
+
+
 #ifdef __cplusplus
 extern "C"
 #endif
@@ -6463,13 +6533,14 @@ XS(boot_Client)
 		newXSproto(strcpy(buf, "GetIP"), XS_Client_GetIP, file, "$");
 		newXSproto(strcpy(buf, "AddLevelBasedExp"), XS_Client_AddLevelBasedExp, file, "$$;$");
 		newXSproto(strcpy(buf, "IncrementAA"), XS_Client_IncrementAA, file, "$$");
+		newXSproto(strcpy(buf, "GrantAlternateAdvancementAbility"), XS_Client_GrantAlternateAdvancementAbility, file, "$$$;$");
 		newXSproto(strcpy(buf, "GetAALevel"), XS_Client_GetAALevel, file, "$$");
 		newXSproto(strcpy(buf, "MarkCompassLoc"), XS_Client_MarkCompassLoc, file, "$$$$");
 		newXSproto(strcpy(buf, "ClearCompassMark"), XS_Client_ClearCompassMark, file, "$");
 		newXSproto(strcpy(buf, "GetFreeSpellBookSlot"), XS_Client_GetFreeSpellBookSlot, file, "$;$");
 		newXSproto(strcpy(buf, "GetSpellBookSlotBySpellID"), XS_Client_GetSpellBookSlotBySpellID, file, "$$");
 		newXSproto(strcpy(buf, "UpdateTaskActivity"), XS_Client_UpdateTaskActivity, file, "$$$$;$");
-		newXSproto(strcpy(buf, "AssignTask"), XS_Client_AssignTask, file, "$$$");
+		newXSproto(strcpy(buf, "AssignTask"), XS_Client_AssignTask, file, "$$$;$");
 		newXSproto(strcpy(buf, "FailTask"), XS_Client_FailTask, file, "$$");
 		newXSproto(strcpy(buf, "IsTaskCompleted"), XS_Client_IsTaskCompleted, file, "$$");
 		newXSproto(strcpy(buf, "IsTaskActive"), XS_Client_IsTaskActive, file, "$$");
@@ -6512,6 +6583,8 @@ XS(boot_Client)
 		newXSproto(strcpy(buf, "GetTargetRingZ"), XS_Client_GetTargetRingZ, file, "$$");
 		newXSproto(strcpy(buf, "QuestReward"), XS_Client_QuestReward, file, "$$;$$$$$$$");
 		newXSproto(strcpy(buf, "CalcEXP"), XS_Client_CalcEXP, file, "$");
+		newXSproto(strcpy(buf, "GetMoney"), XS_Client_GetMoney, file, "$$$");
+		newXSproto(strcpy(buf, "GetAccountAge"), XS_Client_GetAccountAge, file, "$");
 		XSRETURN_YES;
 }
 

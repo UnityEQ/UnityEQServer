@@ -100,6 +100,7 @@ Database::~Database()
 	Return the account id or zero if no account matches.
 	Zero will also be returned if there is a database error.
 */
+
 uint32 Database::CheckLogin(const char* name, const char* password, int16* oStatus) {
 
 	if(strlen(name) >= 50 || strlen(password) >= 50)
@@ -112,7 +113,7 @@ uint32 Database::CheckLogin(const char* name, const char* password, int16* oStat
 	DoEscapeString(tmpPW, password, strlen(password));
 
 	std::string query = StringFormat("SELECT id, status FROM account WHERE name='%s' AND password is not null "
-		"and length(password) > 0 and (password='%s' or password=MD5('%s'))",
+		"and length(password) > 0 and (password='%s' or password=sha('%s'))",
 		tmpUN, tmpPW, tmpPW);
 	auto results = QueryDatabase(query);
 
@@ -122,7 +123,37 @@ uint32 Database::CheckLogin(const char* name, const char* password, int16* oStat
 	}
 
 	if(results.RowCount() == 0)
-		return 0;
+	{
+		if(!CheckLoginName(tmpUN))
+		{
+			uint32 accid = CreateAccount(tmpUN, tmpPW, 0);
+			results = QueryDatabase(query);
+
+
+			if (!results.Success())
+			{
+				return 0;
+			}
+
+			if(results.RowCount() == 0)
+			{
+				return 0;
+			}
+
+			auto row = results.begin();
+
+			uint32 id = atoi(row[0]);
+
+			if (oStatus)
+				*oStatus = atoi(row[1]);
+			return id;
+
+		}
+		else
+		{
+			return 0;
+		}
+	}
 
 	auto row = results.begin();
 
@@ -133,6 +164,25 @@ uint32 Database::CheckLogin(const char* name, const char* password, int16* oStat
 
 	return id;
 }
+
+//See if login name exists
+bool Database::CheckLoginName(const char* loginName)
+{
+	std::string query = StringFormat("SELECT id, status FROM account WHERE name='%s'", loginName );
+
+	auto results = QueryDatabase(query);
+
+	if (!results.Success())
+	{
+		return true;
+	}
+
+	if (results.RowCount() != 0)
+		return true;
+
+	return false;
+}
+
 
 //Get Banned IP Address List - Only return false if the incoming connection's IP address is not present in the banned_ips table.
 bool Database::CheckBannedIPs(const char* loginIP)
@@ -214,13 +264,38 @@ int16 Database::CheckStatus(uint32 account_id) {
 	return status;
 }
 
+uint32 Database::GetMaxLSID(uint32 &max_id)
+{
+	max_id = 0;
+
+	const std::string query = "SELECT MAX(lsaccount_id) FROM account;";
+	auto results = QueryDatabase(query);
+	if (!results.Success()) {
+		return 0;
+	}
+
+	if (results.RowCount() == 0)
+		return 0;
+
+	auto row = results.begin();
+
+	if (row[0])
+		max_id = atoi(row[0]);
+	return max_id;
+}
+
 uint32 Database::CreateAccount(const char* name, const char* password, int16 status, uint32 lsaccount_id) {
 	std::string query;
 
+
+	uint32 maxLSID = 0;
+
+	GetMaxLSID(maxLSID);
+
 	if (password)
-		query = StringFormat("INSERT INTO account SET name='%s', password='%s', status=%i, lsaccount_id=%i, time_creation=UNIX_TIMESTAMP();",name,password,status, lsaccount_id);
+		query = StringFormat("INSERT INTO account SET name='%s', password='%s', status=%i, lsaccount_id=%i, time_creation=UNIX_TIMESTAMP();",name,password,status, maxLSID);
 	else
-		query = StringFormat("INSERT INTO account SET name='%s', status=%i, lsaccount_id=%i, time_creation=UNIX_TIMESTAMP();",name, status, lsaccount_id);
+		return 0;
 
 	Log.Out(Logs::General, Logs::World_Server, "Account Attempting to be created: '%s' status: %i", name, status);
 	auto results = QueryDatabase(query);
@@ -250,7 +325,7 @@ bool Database::DeleteAccount(const char* name) {
 }
 
 bool Database::SetLocalPassword(uint32 accid, const char* password) {
-	std::string query = StringFormat("UPDATE account SET password=MD5('%s') where id=%i;", EscapeString(password).c_str(), accid);
+	std::string query = StringFormat("UPDATE account SET password=sha('%s') where id=%i;", EscapeString(password).c_str(), accid);
 
 	auto results = QueryDatabase(query);
 
@@ -789,7 +864,7 @@ uint32 Database::GetAccountIDByName(const char* accname, int16* status, uint32* 
 	if (!isAlphaNumeric(accname))
 		return 0;
 
-	std::string query = StringFormat("SELECT `id`, `status`, `lsaccount_id` FROM `account` WHERE `name` = '%s' LIMIT 1", accname);
+	std::string query = StringFormat("SELECT `id`, `status` FROM `account` WHERE `name` = '%s' LIMIT 1", accname);
 	auto results = QueryDatabase(query);
 
 	if (!results.Success()) {
@@ -807,8 +882,8 @@ uint32 Database::GetAccountIDByName(const char* accname, int16* status, uint32* 
 		*status = atoi(row[1]);
 
 	if (lsid) {
-		if (row[2])
-			*lsid = atoi(row[2]);
+		if (row[0])
+			*lsid = atoi(row[0]);
 		else
 			*lsid = 0;
 	}
@@ -817,7 +892,7 @@ uint32 Database::GetAccountIDByName(const char* accname, int16* status, uint32* 
 }
 
 void Database::GetAccountName(uint32 accountid, char* name, uint32* oLSAccountID) {
-	std::string query = StringFormat("SELECT `name`, `lsaccount_id` FROM `account` WHERE `id` = '%i'", accountid); 
+	std::string query = StringFormat("SELECT `name`, `id` FROM `account` WHERE `id` = '%i'", accountid); 
 	auto results = QueryDatabase(query);
 
 	if (!results.Success()) {
@@ -1274,7 +1349,7 @@ bool Database::AddToNameFilter(const char* name) {
 
 uint32 Database::GetAccountIDFromLSID(uint32 iLSID, char* oAccountName, int16* oStatus) {
 	uint32 account_id = 0;
-	std::string query = StringFormat("SELECT id, name, status FROM account WHERE lsaccount_id=%i", iLSID);
+	std::string query = StringFormat("SELECT id, name, status FROM account WHERE id=%i", iLSID);
 	auto results = QueryDatabase(query);
 
 	if (!results.Success()) {
@@ -1384,7 +1459,7 @@ bool Database::MoveCharacterToZone(const char* charname, const char* zonename) {
 }
 
 bool Database::MoveCharacterToZone(uint32 iCharID, const char* iZonename) { 
-	std::string query = StringFormat("UPDATE `character_data` SET `zone_id` = %i, `x` = -1, `y` = -1, `z` = -1 WHERE `id` = %i", iZonename, GetZoneID(iZonename), iCharID);
+	std::string query = StringFormat("UPDATE `character_data` SET `zone_id` = %i, `x` = -1, `y` = -1, `z` = -1 WHERE `id` = %i", GetZoneID(iZonename), iCharID);
 	auto results = QueryDatabase(query);
 
 	if (!results.Success()) {
@@ -2172,4 +2247,13 @@ void Database::LoadLogSettings(EQEmuLogSys::LogSettings* log_settings)
 			Log.file_logs_enabled = true;
 		}
 	}
+}
+
+void Database::ClearInvSnapshots(bool use_rule)
+{
+	uint32 del_time = time(nullptr);
+	if (use_rule) { del_time -= RuleI(Character, InvSnapshotHistoryD) * 86400; }
+
+	std::string query = StringFormat("DELETE FROM inventory_snapshots WHERE time_index <= %lu", (unsigned long)del_time);
+	QueryDatabase(query);
 }

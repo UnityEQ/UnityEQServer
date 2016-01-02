@@ -1517,7 +1517,8 @@ struct CombatDamage_Struct
 /* 13 */	float	force;		// cd cc cc 3d
 /* 17 */	float	meleepush_xy;		// see above notes in Action_Struct
 /* 21 */	float	meleepush_z;
-/* 25 */	uint8	unknown25[5];	// was [9]
+/* 25 */	uint8	unknown25;	// was [9]
+/* 26 */	uint32	special; // 2 = Rampage, 1 = Wild Rampage
 /* 30 */
 };
 
@@ -4288,7 +4289,7 @@ struct AA_List {
 struct AA_Action {
 /*00*/	uint32	action;
 /*04*/	uint32	ability;
-/*08*/	uint32	unknown08;
+/*08*/	uint32	target_id;
 /*12*/	uint32	exp_value;
 /*16*/
 };

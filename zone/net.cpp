@@ -28,7 +28,6 @@
 #include "../common/eq_packet_structs.h"
 #include "../common/mutex.h"
 #include "../common/version.h"
-
 #include "../common/packet_dump_file.h"
 #include "../common/opcodemgr.h"
 #include "../common/guilds.h"
@@ -60,7 +59,6 @@
 #include "quest_parser_collection.h"
 #include "embparser.h"
 #include "lua_parser.h"
-
 #include "questmgr.h"
 #include "remote_call.h"
 #include "remote_call_subscribe.h"
@@ -68,7 +66,6 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <signal.h>
@@ -97,7 +94,6 @@ EntityList entity_list;
 WorldServer worldserver;
 uint32 numclients = 0;
 char errorname[32];
-uint16 adverrornum = 0;
 extern Zone* zone;
 EQStreamFactory eqsf(ZoneStream);
 EQWebStreamFactory eqwsf(ZoneStream);
@@ -109,7 +105,6 @@ QuestParserCollection *parse = 0;
 EQEmuLogSys Log;
 
 const SPDat_Spell_Struct* spells;
-void LoadSpells(EQEmu::MemoryMappedFile **mmf);
 int32 SPDAT_RECORDS = -1;
 
 void Shutdown();
@@ -125,38 +120,80 @@ int main(int argc, char** argv) {
 
 	QServ = new QueryServ;
 
-	if(argc == 3) {
+	Log.Out(Logs::General, Logs::Zone_Server, "Loading server configuration..");
+	if(!ZoneConfig::LoadConfig()) {
+		Log.Out(Logs::General, Logs::Error, "Loading server configuration failed.");
+		return 1;
+	}
+	const ZoneConfig *Config = ZoneConfig::get();
+
+	uint32 instance_id = 0;
+	std::string z_name;
+	if(argc == 4) {
+		instance_id = atoi(argv[3]);
 		worldserver.SetLauncherName(argv[2]);
-		worldserver.SetLaunchedName(argv[1]);
-		if(strncmp(argv[1], "dynamic_", 8) == 0) {
-			//dynamic zone with a launcher name correlation
+		auto zone_port = SplitString(argv[1], ':');
+
+		if(zone_port.size() > 0) {
+			z_name = zone_port[0];
+		}
+
+		if(zone_port.size() > 1) {
+			std::string p_name = zone_port[1];
+			Config->SetZonePort(atoi(p_name.c_str()));
+		}
+
+		worldserver.SetLaunchedName(z_name.c_str());
+		if(strncmp(z_name.c_str(), "dynamic_", 8) == 0) {
+			zone_name = ".";
+		}
+		else {
+			zone_name = z_name.c_str();
+		}
+	} else if(argc == 3) {
+		worldserver.SetLauncherName(argv[2]);
+		auto zone_port = SplitString(argv[1], ':');
+
+		if(zone_port.size() > 0) {
+			z_name = zone_port[0];
+		}
+
+		if(zone_port.size() > 1) {
+			std::string p_name = zone_port[1];
+			Config->SetZonePort(atoi(p_name.c_str()));
+		}
+
+		worldserver.SetLaunchedName(z_name.c_str());
+		if(strncmp(z_name.c_str(), "dynamic_", 8) == 0) {
 			zone_name = ".";
 		} else {
-			zone_name = argv[1];
-			worldserver.SetLaunchedName(zone_name);
+			zone_name = z_name.c_str();
 		}
 	} else if (argc == 2) {
 		worldserver.SetLauncherName("NONE");
-		worldserver.SetLaunchedName(argv[1]);
-		if(strncmp(argv[1], "dynamic_", 8) == 0) {
-			//dynamic zone with a launcher name correlation
+		auto zone_port = SplitString(argv[1], ':');
+
+		if(zone_port.size() > 0) {
+			z_name = zone_port[0];
+		}
+
+		if(zone_port.size() > 1) {
+			std::string p_name = zone_port[1];
+			Config->SetZonePort(atoi(p_name.c_str()));
+		}
+
+		worldserver.SetLaunchedName(z_name.c_str());
+		if(strncmp(z_name.c_str(), "dynamic_", 8) == 0) {
 			zone_name = ".";
-		} else {
-			zone_name = argv[1];
-			worldserver.SetLaunchedName(zone_name);
+		}
+		else {
+			zone_name = z_name.c_str();
 		}
 	} else {
 		zone_name = ".";
 		worldserver.SetLaunchedName(".");
 		worldserver.SetLauncherName("NONE");
 	}
-
-	Log.Out(Logs::General, Logs::Zone_Server, "Loading server configuration..");
-	if (!ZoneConfig::LoadConfig()) {
-		Log.Out(Logs::General, Logs::Error, "Loading server configuration failed.");
-		return 1;
-	}
-	const ZoneConfig *Config = ZoneConfig::get();
 
 	worldserver.SetPassword(Config->SharedKey.c_str());
 
@@ -210,37 +247,46 @@ int main(int argc, char** argv) {
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading Variables");
 	database.LoadVariables();
 	
+	char hotfix_name[256] = { 0 };
+	if(database.GetVariable("hotfix_name", hotfix_name, 256)) {
+		if(strlen(hotfix_name) > 0) {
+			Log.Out(Logs::General, Logs::Zone_Server, "Current hotfix in use: '%s'", hotfix_name);
+		}
+	}
+
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading zone names");
 	database.LoadZoneNames();
 	
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading items");
-	if (!database.LoadItems()) {
+	if(!database.LoadItems(hotfix_name)) {
 		Log.Out(Logs::General, Logs::Error, "Loading items FAILED!");
 		Log.Out(Logs::General, Logs::Error, "Failed. But ignoring error and going on...");
 	}
 
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading npc faction lists");
-	if (!database.LoadNPCFactionLists()) {
+	if(!database.LoadNPCFactionLists(hotfix_name)) {
 		Log.Out(Logs::General, Logs::Error, "Loading npcs faction lists FAILED!");
 		return 1;
 	}
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading loot tables");
-	if (!database.LoadLoot()) {
+	if(!database.LoadLoot(hotfix_name)) {
 		Log.Out(Logs::General, Logs::Error, "Loading loot FAILED!");
 		return 1;
 	}
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading skill caps");
-	if (!database.LoadSkillCaps()) {
+	if(!database.LoadSkillCaps(std::string(hotfix_name))) {
 		Log.Out(Logs::General, Logs::Error, "Loading skill caps FAILED!");
 		return 1;
 	}
 
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading spells");
-	EQEmu::MemoryMappedFile *mmf = nullptr;
-	LoadSpells(&mmf);
+	if(!database.LoadSpells(hotfix_name, &SPDAT_RECORDS, &spells)) {
+		Log.Out(Logs::General, Logs::Error, "Loading spells FAILED!");
+		return 1;
+	}
 
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading base data");
-	if (!database.LoadBaseData()) {
+	if(!database.LoadBaseData(hotfix_name)) {
 		Log.Out(Logs::General, Logs::Error, "Loading base data FAILED!");
 		return 1;
 	}
@@ -253,9 +299,6 @@ int main(int argc, char** argv) {
 	
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading titles");
 	title_manager.LoadTitles();
-	
-	Log.Out(Logs::General, Logs::Zone_Server, "Loading AA effects");
-	database.LoadAAEffects();
 	
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading tributes");
 	database.LoadTributes();
@@ -322,7 +365,7 @@ int main(int argc, char** argv) {
 #endif
 	if (!strlen(zone_name) || !strcmp(zone_name,".")) {
 		Log.Out(Logs::General, Logs::Zone_Server, "Entering sleep mode");
-	} else if (!Zone::Bootup(database.GetZoneID(zone_name), 0, true)) { //todo: go above and fix this to allow cmd line instance
+	} else if (!Zone::Bootup(database.GetZoneID(zone_name), instance_id, true)) {
 		Log.Out(Logs::General, Logs::Error, "Zone Bootup failed :: Zone::Bootup");
 		zone = 0;
 	}
@@ -484,7 +527,6 @@ int main(int argc, char** argv) {
 	safe_delete(lua_parser);
 #endif
 
-	safe_delete(mmf);
 	safe_delete(Config);
 
 	if (zone != 0)
@@ -550,16 +592,6 @@ uint32 NetConnection::GetIP(char* name)
 
 }
 
-void NetConnection::SaveInfo(char* address, uint32 port, char* waddress, char* filename) {
-
-	ZoneAddress = new char[strlen(address)+1];
-	strcpy(ZoneAddress, address);
-	ZonePort = port;
-	WorldAddress = new char[strlen(waddress)+1];
-	strcpy(WorldAddress, waddress);
-	strn0cpy(ZoneFileName, filename, sizeof(ZoneFileName));
-}
-
 NetConnection::NetConnection()
 :
 	object_timer(5000),
@@ -569,9 +601,6 @@ NetConnection::NetConnection()
 	raid_timer(1000),
 	trap_timer(1000)
 {
-	ZonePort = 0;
-	ZoneAddress = 0;
-	WorldAddress = 0;
 	group_timer.Disable();
 	raid_timer.Disable();
 	corpse_timer.Disable();
@@ -581,32 +610,6 @@ NetConnection::NetConnection()
 }
 
 NetConnection::~NetConnection() {
-	if (ZoneAddress != 0)
-		safe_delete_array(ZoneAddress);
-	if (WorldAddress != 0)
-		safe_delete_array(WorldAddress);
-}
-
-void LoadSpells(EQEmu::MemoryMappedFile **mmf) {
-	int records = database.GetMaxSpellID() + 1;
-
-	try {
-		EQEmu::IPCMutex mutex("spells");
-		mutex.Lock();
-		*mmf = new EQEmu::MemoryMappedFile("shared/spells");
-		uint32 size = (*mmf)->Size();
-		if(size != (records * sizeof(SPDat_Spell_Struct))) {
-			EQ_EXCEPT("Zone", "Unable to load spells: (*mmf)->Size() != records * sizeof(SPDat_Spell_Struct)");
-		}
-
-		spells = reinterpret_cast<SPDat_Spell_Struct*>((*mmf)->Get());
-		mutex.Unlock();
-	} catch(std::exception &ex) {
-		Log.Out(Logs::General, Logs::Error, "Error loading spells: %s", ex.what());
-		return;
-	}
-
-	SPDAT_RECORDS = records;
 }
 
 /* Update Window Title with relevant information */

@@ -31,13 +31,13 @@
 #include "../common/linked_list.h"
 #include "../common/servertalk.h"
 
-#include "aa.h"
 #include "client.h"
 #include "entity.h"
 #include "npc.h"
 #include "string_ids.h"
 #include "spawn2.h"
 #include "zone.h"
+#include "quest_parser_collection.h"
 
 #include <cctype>
 #include <stdio.h>
@@ -278,6 +278,18 @@ NPC::NPC(const NPCType* d, Spawn2* in_respawn, const glm::vec4& position, int if
 	int r;
 	for(r = 0; r <= HIGHEST_SKILL; r++) {
 		skills[r] = database.GetSkillCap(GetClass(),(SkillUseTypes)r,moblevel);
+	}
+	// some overrides -- really we need to be able to set skills for mobs in the DB
+	// There are some known low level SHM/BST pets that do not follow this, which supports
+	// the theory of needing to be able to set skills for each mob separately
+	if (moblevel > 50) {
+		skills[SkillDoubleAttack] = 250;
+		skills[SkillDualWield] = 250;
+	} else if (moblevel > 3) {
+		skills[SkillDoubleAttack] = moblevel * 5;
+		skills[SkillDualWield] = skills[SkillDoubleAttack];
+	} else {
+		skills[SkillDoubleAttack] = moblevel * 5;
 	}
 
 	if(d->trap_template > 0)
@@ -590,6 +602,7 @@ bool NPC::Process()
 
 	if(tic_timer.Check())
 	{
+		parse->EventNPC(EVENT_TICK, this, nullptr, "", 0);
 		BuffProcess();
 
 		if(curfp)
@@ -1034,7 +1047,7 @@ uint32 ZoneDatabase::CreateNewNPCCommand(const char *zone, uint32 zone_version, 
 		query = StringFormat("INSERT INTO npc_types (id, name, level, race, class, hp, gender, "
 				     "texture, helmtexture, size, loottable_id, merchant_id, face, "
 				     "runspeed, prim_melee_type, sec_melee_type) "
-				     "VALUES(%i, \"%s\" , %i, %i, %i, %i, %i, %i, %i, %f, %i, %i, %i, %f, %i, %i)",
+					 "VALUES(%i, \"%s\" , %i, %i, %i, %i, %i, %i, %i, %f, %i, %i, %i, %i, %i, %i)",
 				     npc_type_id, tmpstr, spawn->GetLevel(), spawn->GetRace(), spawn->GetClass(),
 				     spawn->GetMaxHP(), spawn->GetGender(), spawn->GetTexture(),
 				     spawn->GetHelmTexture(), spawn->GetSize(), spawn->GetLoottableID(),
@@ -1048,7 +1061,7 @@ uint32 ZoneDatabase::CreateNewNPCCommand(const char *zone, uint32 zone_version, 
 		query = StringFormat("INSERT INTO npc_types (name, level, race, class, hp, gender, "
 				     "texture, helmtexture, size, loottable_id, merchant_id, face, "
 				     "runspeed, prim_melee_type, sec_melee_type) "
-				     "VALUES(\"%s\", %i, %i, %i, %i, %i, %i, %i, %f, %i, %i, %i, %f, %i, %i)",
+					 "VALUES(\"%s\", %i, %i, %i, %i, %i, %i, %i, %f, %i, %i, %i, %i, %i, %i)",
 				     tmpstr, spawn->GetLevel(), spawn->GetRace(), spawn->GetClass(), spawn->GetMaxHP(),
 				     spawn->GetGender(), spawn->GetTexture(), spawn->GetHelmTexture(), spawn->GetSize(),
 				     spawn->GetLoottableID(), spawn->MerchantType, 0, spawn->GetRunspeed(), 28, 28);
@@ -1065,6 +1078,9 @@ uint32 ZoneDatabase::CreateNewNPCCommand(const char *zone, uint32 zone_version, 
 		return false;
 	}
 	uint32 spawngroupid = results.LastInsertedID();
+
+	spawn->SetSp2(spawngroupid);
+	spawn->SetNPCTypeID(npc_type_id);
 
 	query = StringFormat("INSERT INTO spawn2 (zone, version, x, y, z, respawntime, heading, spawngroupID) "
 			     "VALUES('%s', %u, %f, %f, %f, %i, %f, %i)",
@@ -1929,7 +1945,15 @@ void NPC::ModifyNPCStat(const char *identifier, const char *newValue)
 	else if(id == "pr") { PR = atoi(val.c_str()); return; }
 	else if(id == "dr") { DR = atoi(val.c_str()); return; }
 	else if(id == "PhR") { PhR = atoi(val.c_str()); return; }
-	else if(id == "runspeed") { runspeed = (float)atof(val.c_str()); CalcBonuses(); return; }
+	else if(id == "runspeed") {
+		runspeed = (float)atof(val.c_str());
+		base_runspeed = (int)((float)runspeed * 40.0f);
+		base_walkspeed = base_runspeed * 100 / 265;
+		walkspeed = ((float)base_walkspeed) * 0.025f;
+		base_fearspeed = base_runspeed * 100 / 127;
+		fearspeed = ((float)base_fearspeed) * 0.025f;
+		CalcBonuses(); return;
+	}
 	else if(id == "special_attacks") { NPCSpecialAttacks(val.c_str(), 0, 1); return; }
 	else if(id == "special_abilities") { ProcessSpecialAbilities(val.c_str()); return; }
 	else if(id == "attack_speed") { attack_speed = (float)atof(val.c_str()); CalcBonuses(); return; }

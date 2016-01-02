@@ -173,8 +173,10 @@ public:
 
 	uint32	CheckLogin(const char* name, const char* password, int16* oStatus = 0);
 	uint32	CreateAccount(const char* name, const char* password, int16 status, uint32 lsaccount_id = 0);
+	uint32	GetMaxLSID(uint32 &max_id);
 	uint32	GetAccountIDFromLSID(uint32 iLSID, char* oAccountName = 0, int16* oStatus = 0);
 	uint32	GetMiniLoginAccount(char* ip);
+	bool	CheckLoginName(const char* ip);
 	uint8	GetAgreementFlag(uint32 acctid);
 
 	void	GetAccountFromID(uint32 id, char* oAccountName, int16* oStatus);
@@ -247,6 +249,8 @@ public:
 	void	SetLFG(uint32 CharID, bool LFG);
 	void	SetLFP(uint32 CharID, bool LFP);
 	void	SetLoginFlags(uint32 CharID, bool LFP, bool LFG, uint8 firstlogon);
+
+	void	ClearInvSnapshots(bool use_rule = true);
 
 	/* EQEmuLogSys */
 	void	LoadLogSettings(EQEmuLogSys::LogSettings* log_settings);

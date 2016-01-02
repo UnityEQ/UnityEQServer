@@ -146,7 +146,8 @@ void NPC::SpellProcess()
 // to allow procs to work
 bool Mob::CastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 	int32 cast_time, int32 mana_cost, uint32* oSpellWillFinish, uint32 item_slot,
-	uint32 timer, uint32 timer_duration, uint32 type, int16 *resist_adjust)
+	uint32 timer, uint32 timer_duration, int16 *resist_adjust,
+	uint32 aa_id)
 {
 	Log.Out(Logs::Detail, Logs::Spells, "CastSpell called for spell %s (%d) on entity %d, slot %d, time %d, mana %d, from item slot %d",
 		(IsValidSpell(spell_id))?spells[spell_id].name:"UNKNOWN SPELL", spell_id, target_id, slot, cast_time, mana_cost, (item_slot==0xFFFFFFFF)?999:item_slot);
@@ -318,11 +319,11 @@ bool Mob::CastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 
 	if(resist_adjust)
 	{
-		return(DoCastSpell(spell_id, target_id, slot, cast_time, mana_cost, oSpellWillFinish, item_slot, timer, timer_duration, type, *resist_adjust));
+		return(DoCastSpell(spell_id, target_id, slot, cast_time, mana_cost, oSpellWillFinish, item_slot, timer, timer_duration, *resist_adjust, aa_id));
 	}
 	else
 	{
-		return(DoCastSpell(spell_id, target_id, slot, cast_time, mana_cost, oSpellWillFinish, item_slot, timer, timer_duration, type, spells[spell_id].ResistDiff));
+		return(DoCastSpell(spell_id, target_id, slot, cast_time, mana_cost, oSpellWillFinish, item_slot, timer, timer_duration, spells[spell_id].ResistDiff, aa_id));
 	}
 }
 
@@ -336,8 +337,8 @@ bool Mob::CastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 //
 bool Mob::DoCastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 					int32 cast_time, int32 mana_cost, uint32* oSpellWillFinish,
-					uint32 item_slot, uint32 timer, uint32 timer_duration, uint32 type,
-					int16 resist_adjust)
+					uint32 item_slot, uint32 timer, uint32 timer_duration,
+					int16 resist_adjust, uint32 aa_id)
 {
 	Mob* pMob = nullptr;
 	int32 orgcasttime;
@@ -361,7 +362,7 @@ bool Mob::DoCastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 		casting_spell_timer = timer;
 		casting_spell_timer_duration = timer_duration;
 	}
-	casting_spell_type = type;
+	casting_spell_aa_id = aa_id;
 
 	SaveSpellLoc();
 	Log.Out(Logs::Detail, Logs::Spells, "Casting %d Started at (%.3f,%.3f,%.3f)", spell_id, m_SpellLocation.x, m_SpellLocation.y, m_SpellLocation.z);
@@ -408,24 +409,19 @@ bool Mob::DoCastSpell(uint16 spell_id, uint16 target_id, uint16 slot,
 	// ok now we know the target
 	casting_spell_targetid = target_id;
 
-	if (mana_cost == -1) {
+	// We don't get actual mana cost here, that's done when we consume the mana
+	if (mana_cost == -1)
 		mana_cost = spell.mana;
-		mana_cost = GetActSpellCost(spell_id, mana_cost);
-	}
-
-	if(HasMGB() && spells[spell_id].can_mgb)
-		mana_cost *= 2;
 
 	// mana is checked for clients on the frontend. we need to recheck it for NPCs though
-	// fix: items dont need mana :-/
 	// If you're at full mana, let it cast even if you dont have enough mana
 
 	// we calculated this above, now enforce it
-	if(mana_cost > 0 && slot != 10)
+	if(mana_cost > 0 && slot != USE_ITEM_SPELL_SLOT)
 	{
 		int my_curmana = GetMana();
 		int my_maxmana = GetMaxMana();
-		if(my_curmana < spell.mana)	// not enough mana
+		if(my_curmana < mana_cost)	// not enough mana
 		{
 			//this is a special case for NPCs with no mana...
 			if(IsNPC() && my_curmana == my_maxmana)
@@ -783,9 +779,9 @@ void Mob::ZeroCastingVars()
 	casting_spell_inventory_slot = 0;
 	casting_spell_timer = 0;
 	casting_spell_timer_duration = 0;
-	casting_spell_type = 0;
 	casting_spell_resist_adjust = 0;
 	casting_spell_checks = false;
+	casting_spell_aa_id = 0;
 	delaytimer = false;
 }
 
@@ -816,10 +812,9 @@ void Mob::InterruptSpell(uint16 message, uint16 color, uint16 spellid)
 		CastToNPC()->AI_Event_SpellCastFinished(false, casting_spell_slot);
 	}
 
-	if(casting_spell_type == 1 && IsClient()) { //Rest AA Timer on failed cast
-		CastToClient()->SendAATimer(casting_spell_timer - pTimerAAStart, 0, 0xFFFFFF);
-		CastToClient()->Message_StringID(15,ABILITY_FAILED);
-		CastToClient()->GetPTimers().Clear(&database, casting_spell_timer);
+	if(casting_spell_aa_id && IsClient()) { //Rest AA Timer on failed cast
+		CastToClient()->Message_StringID(MT_SpellFailure, ABILITY_FAILED);
+		CastToClient()->ResetAlternateAdvancementTimer(casting_spell_aa_id);
 	}
 
 	ZeroCastingVars();	// resets all the state keeping stuff
@@ -1413,47 +1408,47 @@ bool Mob::DetermineSpellTargets(uint16 spell_id, Mob *&spell_target, Mob *&ae_ce
 	}
 
 	//Must be out of combat. (If Beneficial checks casters combat state, Deterimental checks targets)
-	if (!spells[spell_id].InCombat && spells[spell_id].OutofCombat){
+	if (!spells[spell_id].InCombat && spells[spell_id].OutofCombat) {
 		if (IsDetrimentalSpell(spell_id)) {
-			if ( (spell_target->IsNPC() && spell_target->IsEngaged()) ||
-				(spell_target->IsClient() && spell_target->CastToClient()->GetAggroCount())){
-					Message_StringID(13,SPELL_NO_EFFECT); //Unsure correct string
-					return false;
+			if (spell_target &&
+			    ((spell_target->IsNPC() && spell_target->IsEngaged()) ||
+			     (spell_target->IsClient() && spell_target->CastToClient()->GetAggroCount()))) {
+				Message_StringID(13, SPELL_NO_EFFECT); // Unsure correct string
+				return false;
 			}
 		}
 
 		else if (IsBeneficialSpell(spell_id)) {
-			if ( (IsNPC() && IsEngaged()) ||
-				(IsClient() && CastToClient()->GetAggroCount())){
-					if (IsDiscipline(spell_id))
-						Message_StringID(13,NO_ABILITY_IN_COMBAT);
-					else
-						Message_StringID(13,NO_CAST_IN_COMBAT);
+			if ((IsNPC() && IsEngaged()) || (IsClient() && CastToClient()->GetAggroCount())) {
+				if (IsDiscipline(spell_id))
+					Message_StringID(13, NO_ABILITY_IN_COMBAT);
+				else
+					Message_StringID(13, NO_CAST_IN_COMBAT);
 
-					return false;
+				return false;
 			}
 		}
 	}
 
-	//Must be in combat. (If Beneficial checks casters combat state, Deterimental checks targets)
-	else if (spells[spell_id].InCombat && !spells[spell_id].OutofCombat){
+	// Must be in combat. (If Beneficial checks casters combat state, Deterimental checks targets)
+	else if (spells[spell_id].InCombat && !spells[spell_id].OutofCombat) {
 		if (IsDetrimentalSpell(spell_id)) {
-			if ( (spell_target->IsNPC() && !spell_target->IsEngaged()) ||
-				(spell_target->IsClient() && !spell_target->CastToClient()->GetAggroCount())){
-					Message_StringID(13,SPELL_NO_EFFECT); //Unsure correct string
-					return false;
+			if (spell_target &&
+			    ((spell_target->IsNPC() && !spell_target->IsEngaged()) ||
+			     (spell_target->IsClient() && !spell_target->CastToClient()->GetAggroCount()))) {
+				Message_StringID(13, SPELL_NO_EFFECT); // Unsure correct string
+				return false;
 			}
 		}
 
 		else if (IsBeneficialSpell(spell_id)) {
-			if ( (IsNPC() && !IsEngaged()) ||
-				(IsClient() && !CastToClient()->GetAggroCount())){
-					if (IsDiscipline(spell_id))
-						Message_StringID(13,NO_ABILITY_OUT_OF_COMBAT);
-					else
-						Message_StringID(13,NO_CAST_OUT_OF_COMBAT);
+			if ((IsNPC() && !IsEngaged()) || (IsClient() && !CastToClient()->GetAggroCount())) {
+				if (IsDiscipline(spell_id))
+					Message_StringID(13, NO_ABILITY_OUT_OF_COMBAT);
+				else
+					Message_StringID(13, NO_CAST_OUT_OF_COMBAT);
 
-					return false;
+				return false;
 			}
 		}
 	}
@@ -2078,7 +2073,7 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, uint16 slot, uint16 
 				else if(!SpellOnTarget(spell_id, spell_target, false, true, resist_adjust, false, level_override)) {
 					if(IsBuffSpell(spell_id) && IsBeneficialSpell(spell_id)) {
 						// Prevent mana usage/timers being set for beneficial buffs
-						if(casting_spell_type == 1)
+						if(casting_spell_aa_id)
 							InterruptSpell();
 						return false;
 					}
@@ -2157,11 +2152,11 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, uint16 slot, uint16 
 			}
 #endif //BOTS
 
+			// We hold off turning MBG off so we can still use it to calc the mana cost
 			if(spells[spell_id].can_mgb && HasMGB())
 			{
 				SpellOnTarget(spell_id, this);
 				entity_list.MassGroupBuff(this, this, spell_id, true);
-				SetMGB(false);
 			}
 			else
 			{
@@ -2262,20 +2257,36 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, uint16 slot, uint16 
 	}
 
 	// if this was a spell slot or an ability use up the mana for it
-	// CastSpell already reduced the cost for it if we're a client with focus
 	if(slot != USE_ITEM_SPELL_SLOT && slot != POTION_BELT_SPELL_SLOT && slot != TARGET_RING_SPELL_SLOT && mana_used > 0)
 	{
+		mana_used = GetActSpellCost(spell_id, mana_used);
+		if (HasMGB() && spells[spell_id].can_mgb) {
+			mana_used *= 2;
+			SetMGB(false);
+		}
+		// clamp if we some how got focused above our current mana
+		if (GetMana() < mana_used)
+			mana_used = GetMana();
 		Log.Out(Logs::Detail, Logs::Spells, "Spell %d: consuming %d mana", spell_id, mana_used);
-		if (!DoHPToManaCovert(mana_used))
+		if (!DoHPToManaCovert(mana_used)) {
 			SetMana(GetMana() - mana_used);
 			TryTriggerOnValueAmount(false, true);
+		}
 	}
 
 	//set our reuse timer on long ass reuse_time spells...
 	if(IsClient() && !isproc)
 	{
-		if(spell_id == casting_spell_id && casting_spell_timer != 0xFFFFFFFF)
+		if(casting_spell_aa_id) {
+			AA::Rank *rank = zone->GetAlternateAdvancementRank(casting_spell_aa_id);
+
+			if(rank && rank->base_ability) {
+				ExpendAlternateAdvancementCharge(rank->base_ability->id);
+			}
+		}
+		else if(spell_id == casting_spell_id && casting_spell_timer != 0xFFFFFFFF)
 		{
+			//aa new todo: aa expendable charges here
 			CastToClient()->GetPTimers().Start(casting_spell_timer, casting_spell_timer_duration);
 			Log.Out(Logs::Detail, Logs::Spells, "Spell %d: Setting custom reuse timer %d to %d", spell_id, casting_spell_timer, casting_spell_timer_duration);
 		}
@@ -2778,11 +2789,15 @@ int Mob::CheckStackConflict(uint16 spellid1, int caster_level1, uint16 spellid2,
 	bool effect_match = true; // Figure out if we're identical in effects on all slots.
 	if (spellid1 != spellid2) {
 		for (i = 0; i < EFFECT_COUNT; i++) {
-			if (sp1.effectid[i] != sp2.effectid[i]) {
+			// we don't want this optimization for mana burns
+			if (sp1.effectid[i] != sp2.effectid[i] || sp1.effectid[i] == SE_ManaBurn) {
 				effect_match = false;
 				break;
 			}
 		}
+	} else if (IsEffectInSpell(spellid1, SE_ManaBurn)) {
+		Log.Out(Logs::Detail, Logs::Spells, "We have a Mana Burn spell that is the same, they won't stack");
+		return -1;
 	}
 
 	// check for special stacking overwrite in spell2 against effects in spell1
@@ -3693,7 +3708,7 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 				}
 
 				if (spelltar->IsAIControlled()) {
-					int32 aggro = CheckAggroAmount(spell_id);
+					int32 aggro = CheckAggroAmount(spell_id, spelltar);
 					if (aggro > 0) {
 						if (!IsHarmonySpell(spell_id))
 							spelltar->AddToHateList(this, aggro);
@@ -3722,20 +3737,20 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 		spelltar->DamageShield(this, true);
 
 	if (spelltar->IsAIControlled() && IsDetrimentalSpell(spell_id) && !IsHarmonySpell(spell_id)) {
-		int32 aggro_amount = CheckAggroAmount(spell_id, isproc);
-		Log.Out(Logs::Detail, Logs::Spells, "Spell %d cast on %s generated %d hate", spell_id, spelltar->GetName(), aggro_amount);
-		if(aggro_amount > 0)
-			spelltar->AddToHateList(this, aggro_amount);		else{
+		int32 aggro_amount = CheckAggroAmount(spell_id, spelltar, isproc);
+		Log.Out(Logs::Detail, Logs::Spells, "Spell %d cast on %s generated %d hate", spell_id,
+			spelltar->GetName(), aggro_amount);
+		if (aggro_amount > 0) {
+			spelltar->AddToHateList(this, aggro_amount);
+		} else {
 			int32 newhate = spelltar->GetHateAmount(this) + aggro_amount;
-			if (newhate < 1) {
-				spelltar->SetHateAmountOnEnt(this,1);
-			} else {
-				spelltar->SetHateAmountOnEnt(this,newhate);
-			}
+			spelltar->SetHateAmountOnEnt(this, std::max(newhate, 1));
 		}
+	} else if (IsBeneficialSpell(spell_id) && !IsSummonPCSpell(spell_id)) {
+		entity_list.AddHealAggro(
+		    spelltar, this,
+		    CheckHealAggroAmount(spell_id, spelltar, (spelltar->GetMaxHP() - spelltar->GetHP())));
 	}
-	else if (IsBeneficialSpell(spell_id) && !IsSummonPCSpell(spell_id))
-		entity_list.AddHealAggro(spelltar, this, CheckHealAggroAmount(spell_id, (spelltar->GetMaxHP() - spelltar->GetHP())));
 
 	// make sure spelltar is high enough level for the buff
 	if(RuleB(Spells, BuffLevelRestrictions) && !spelltar->CheckSpellLevelRestriction(spell_id))
@@ -3753,7 +3768,7 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 		// if SpellEffect returned false there's a problem applying the
 		// spell. It's most likely a buff that can't stack.
 		Log.Out(Logs::Detail, Logs::Spells, "Spell %d could not apply its effects %s -> %s\n", spell_id, GetName(), spelltar->GetName());
-		if(casting_spell_type != 1) // AA is handled differently
+		if(casting_spell_aa_id)
 			Message_StringID(MT_SpellFailure, SPELL_NO_HOLD);
 		safe_delete(action_packet);
 		return false;
@@ -4048,7 +4063,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 		if(GetSpecialAbility(UNMEZABLE)) {
 			Log.Out(Logs::Detail, Logs::Spells, "We are immune to Mez spells.");
 			caster->Message_StringID(MT_Shout, CANNOT_MEZ);
-			int32 aggro = caster->CheckAggroAmount(spell_id);
+			int32 aggro = caster->CheckAggroAmount(spell_id, this);
 			if(aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
@@ -4075,7 +4090,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 	{
 		Log.Out(Logs::Detail, Logs::Spells, "We are immune to Slow spells.");
 		caster->Message_StringID(MT_Shout, IMMUNE_ATKSPEED);
-		int32 aggro = caster->CheckAggroAmount(spell_id);
+		int32 aggro = caster->CheckAggroAmount(spell_id, this);
 		if(aggro > 0) {
 			AddToHateList(caster, aggro);
 		} else {
@@ -4091,7 +4106,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 		if(GetSpecialAbility(UNFEARABLE)) {
 			Log.Out(Logs::Detail, Logs::Spells, "We are immune to Fear spells.");
 			caster->Message_StringID(MT_Shout, IMMUNE_FEAR);
-			int32 aggro = caster->CheckAggroAmount(spell_id);
+			int32 aggro = caster->CheckAggroAmount(spell_id, this);
 			if(aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
@@ -4108,7 +4123,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 		{
 			Log.Out(Logs::Detail, Logs::Spells, "Level is %d, cannot be feared by this spell.", GetLevel());
 			caster->Message_StringID(MT_Shout, FEAR_TOO_HIGH);
-			int32 aggro = caster->CheckAggroAmount(spell_id);
+			int32 aggro = caster->CheckAggroAmount(spell_id, this);
 			if (aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
@@ -4116,8 +4131,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 			}
 			return true;
 		}
-
-		else if (IsClient() && CastToClient()->CheckAAEffect(aaEffectWarcry))
+		else if (CheckAATimer(aaTimerWarcry))
 		{
 			Message(13, "Your are immune to fear.");
 			Log.Out(Logs::Detail, Logs::Spells, "Clients has WarCry effect, immune to fear!");
@@ -4132,7 +4146,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 		{
 			Log.Out(Logs::Detail, Logs::Spells, "We are immune to Charm spells.");
 			caster->Message_StringID(MT_Shout, CANNOT_CHARM);
-			int32 aggro = caster->CheckAggroAmount(spell_id);
+			int32 aggro = caster->CheckAggroAmount(spell_id, this);
 			if(aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
@@ -4172,7 +4186,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 		if(GetSpecialAbility(UNSNAREABLE)) {
 			Log.Out(Logs::Detail, Logs::Spells, "We are immune to Snare spells.");
 			caster->Message_StringID(MT_Shout, IMMUNE_MOVEMENT);
-			int32 aggro = caster->CheckAggroAmount(spell_id);
+			int32 aggro = caster->CheckAggroAmount(spell_id, this);
 			if(aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
@@ -5291,6 +5305,14 @@ void Client::SendBuffDurationPacket(Buffs_Struct &buff)
 		// is doing theirs.  This makes the two match.
 		int index = GetSpellEffectIndex(buff.spellid, SE_CurrentHP);
 		sbf->effect = abs(spells[buff.spellid].base[index]);
+	}
+	else if (IsEffectInSpell(buff.spellid, SE_SeeInvis))
+	{
+		// Wish I knew what this sbf->effect field was trying to tell
+		// the client.  10 seems to not break SeeInvis spells.  Level,
+		// which is what the old client sends breaks the client at at 
+		// least level 9, maybe more.
+		sbf->effect = 10;
 	}
 	else
 	{

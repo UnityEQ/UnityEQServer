@@ -874,7 +874,7 @@ bool QuestManager::isdisctome(int item_id) {
 void QuestManager::safemove() {
 	QuestManagerCurrentQuestVars();
 	if (initiator && initiator->IsClient())
-		initiator->GoToSafeCoords(zone->GetZoneID(), 0);
+		initiator->GoToSafeCoords(zone->GetZoneID(), zone->GetInstanceID());
 }
 
 void QuestManager::rain(int weather) {
@@ -1774,7 +1774,7 @@ void QuestManager::sethp(int hpperc) {
 	owner->Damage(owner, newhp, SPELL_UNKNOWN, SkillHandtoHand, false, 0, false);
 }
 
-bool QuestManager::summonburriedplayercorpse(uint32 char_id, const glm::vec4& position) {
+bool QuestManager::summonburiedplayercorpse(uint32 char_id, const glm::vec4& position) {
 	bool Result = false;
 
 	if(char_id <= 0)
@@ -1798,7 +1798,7 @@ bool QuestManager::summonallplayercorpses(uint32 char_id, const glm::vec4& posit
 	return true;
 }
 
-uint32 QuestManager::getplayerburriedcorpsecount(uint32 char_id) {
+uint32 QuestManager::getplayerburiedcorpsecount(uint32 char_id) {
 	uint32 Result = 0;
 
 	if(char_id > 0) {
@@ -2200,11 +2200,11 @@ void QuestManager::taskexploredarea(int exploreid) {
 		initiator->UpdateTasksOnExplore(exploreid);
 }
 
-void QuestManager::assigntask(int taskid) {
+void QuestManager::assigntask(int taskid, bool enforce_level_requirement) {
 	QuestManagerCurrentQuestVars();
 
-	if(RuleB(TaskSystem, EnableTaskSystem) && initiator && owner)
-		initiator->AssignTask(taskid, owner->GetID());
+	if (RuleB(TaskSystem, EnableTaskSystem) && initiator && owner)
+		initiator->AssignTask(taskid, owner->GetID(), enforce_level_requirement);
 }
 
 void QuestManager::failtask(int taskid) {

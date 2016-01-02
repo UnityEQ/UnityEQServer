@@ -342,7 +342,7 @@ bool Mob::CheckHitChance(Mob* other, SkillUseTypes skillinuse, int Hand, int16 c
 	return(tohit_roll <= chancetohit);
 }
 
-bool Mob::AvoidDamage(Mob* other, int32 &damage, bool CanRiposte)
+bool Mob::AvoidDamage(Mob *other, int32 &damage, int hand)
 {
 	/* called when a mob is attacked, does the checks to see if it's a hit
 	* and does other mitigation checks. 'this' is the mob being attacked.
@@ -354,22 +354,32 @@ bool Mob::AvoidDamage(Mob* other, int32 &damage, bool CanRiposte)
 	* -4 - dodge
 	*
 	*/
-	float skill;
-	float bonus;
-	float RollTable[4] = {0,0,0,0};
-	float roll;
-	Mob *attacker=other;
-	Mob *defender=this;
 
-	//garunteed hit
-	bool ghit = false;
-	if((attacker->aabonuses.MeleeSkillCheck + attacker->spellbonuses.MeleeSkillCheck + attacker->itembonuses.MeleeSkillCheck) > 500)
-		ghit = true;
+	/* Order according to current (SoF+?) dev quotes:
+	 * https://forums.daybreakgames.com/eq/index.php?threads/test-update-06-10-15.223510/page-2#post-3261772
+	 * https://forums.daybreakgames.com/eq/index.php?threads/test-update-06-10-15.223510/page-2#post-3268227
+	 * Riposte 50, hDEX, must have weapon/fists, doesn't work on archery/throwing
+	 * Block 25, hDEX, works on archery/throwing, behind block done here if back to attacker base1 is chance
+	 * Parry 45, hDEX, doesn't work on throwing/archery, must be facing target
+	 * Dodge 45, hAGI, works on archery/throwing, monks can dodge attacks from behind
+	 * Shield Block, rand base1
+	 * Staff Block, rand base1
+	 *    regular strike through
+	 *    avoiding the attack (CheckHitChance)
+	 * As soon as one succeeds, none of the rest are checked
+	 *
+	 * Formula (all int math)
+	 * (posted for parry, assume rest at the same)
+	 * Chance = (((SKILL + 100) + [((SKILL+100) * SPA(175).Base1) / 100]) / 45) + [(hDex / 25) - min([hDex / 25], hStrikethrough)].
+	 * hStrikethrough is a mob stat that was added to counter the bonuses of heroic stats
+	 * Number rolled against 100, if the chance is greater than 100 it happens 100% of time
+	 *
+	 * Things with 10k accuracy mods can be avoided with these skills qq
+	 */
+	Mob *attacker = other;
+	Mob *defender = this;
 
-	bool InFront = false;
-
-	if (attacker->InFrontMob(this, attacker->GetX(), attacker->GetY()))
-		InFront = true;
+	bool InFront = attacker->InFrontMob(this, attacker->GetX(), attacker->GetY());
 
 	/*
 	This special ability adds a negative modifer to the defenders riposte/block/parry/chance
@@ -384,10 +394,9 @@ bool Mob::AvoidDamage(Mob* other, int32 &damage, bool CanRiposte)
 	int counter_parry = 0;
 	int counter_dodge = 0;
 
-	if (attacker->GetSpecialAbility(COUNTER_AVOID_DAMAGE)){
-
+	if (attacker->GetSpecialAbility(COUNTER_AVOID_DAMAGE)) {
 		counter_all = attacker->GetSpecialAbilityParam(COUNTER_AVOID_DAMAGE, 0);
-		counter_riposte = attacker->GetSpecialAbilityParam(COUNTER_AVOID_DAMAGE,1);
+		counter_riposte = attacker->GetSpecialAbilityParam(COUNTER_AVOID_DAMAGE, 1);
 		counter_block = attacker->GetSpecialAbilityParam(COUNTER_AVOID_DAMAGE, 2);
 		counter_parry = attacker->GetSpecialAbilityParam(COUNTER_AVOID_DAMAGE, 3);
 		counter_dodge = attacker->GetSpecialAbilityParam(COUNTER_AVOID_DAMAGE, 4);
@@ -401,31 +410,37 @@ bool Mob::AvoidDamage(Mob* other, int32 &damage, bool CanRiposte)
 		Log.Out(Logs::Detail, Logs::Combat, "I am enraged, riposting frontal attack.");
 	}
 
-	/////////////////////////////////////////////////////////
-	// riposte
-	/////////////////////////////////////////////////////////
-	float riposte_chance = 0.0f;
-	if (CanRiposte && damage > 0 && CanThisClassRiposte() && InFront)
-	{
-		riposte_chance = (100.0f + static_cast<float>(aabonuses.RiposteChance + spellbonuses.RiposteChance +
-			itembonuses.RiposteChance - counter_riposte - counter_all)) / 100.0f;
-		skill = GetSkill(SkillRiposte);
-		if (IsClient()) {
+	// riposte -- it may seem crazy, but if the attacker has SPA 173 on them, they are immune to Ripo
+	bool ImmuneRipo = attacker->aabonuses.RiposteChance || attacker->spellbonuses.RiposteChance || attacker->itembonuses.RiposteChance;
+	// Need to check if we have something in MainHand to actually attack with (or fists)
+	if (hand != MainRange && CanThisClassRiposte() && InFront && !ImmuneRipo) {
+		if (IsClient())
 			CastToClient()->CheckIncreaseSkill(SkillRiposte, other, -10);
+		// check auto discs ... I guess aa/items too :P
+		if (spellbonuses.RiposteChance == 10000 || aabonuses.RiposteChance == 10000 || itembonuses.RiposteChance == 10000) {
+			damage = -3;
+			return true;
 		}
-
-		if (!ghit) {	//if they are not using a garunteed hit discipline
-			bonus = 2.0 + skill/60.0 + (GetDEX()/200);
-			bonus *= riposte_chance;
-			bonus = mod_riposte_chance(bonus, attacker);
-			RollTable[0] = bonus + (itembonuses.HeroicDEX / 25); // 25 heroic = 1%, applies to ripo, parry, block
+		int chance = GetSkill(SkillRiposte) + 100;
+		chance += (chance * (aabonuses.RiposteChance + spellbonuses.RiposteChance + itembonuses.RiposteChance)) / 100;
+		chance /= 50;
+		chance += itembonuses.HeroicDEX / 25; // live has "heroic strickthrough" here to counter
+		if (counter_riposte || counter_all) {
+			float counter = (counter_riposte + counter_all) / 100.0f;
+			chance -= chance * counter;
+		}
+		// AA Slippery Attacks
+		if (hand == MainSecondary) {
+			int slip = aabonuses.OffhandRiposteFail + itembonuses.OffhandRiposteFail + spellbonuses.OffhandRiposteFail;
+			chance += chance * slip / 100;
+		}
+		if (chance > 0 && zone->random.Roll(chance)) { // could be <0 from offhand stuff
+			damage = -3;
+			return true;
 		}
 	}
 
-	///////////////////////////////////////////////////////
 	// block
-	///////////////////////////////////////////////////////
-
 	bool bBlockFromRear = false;
 
 	// a successful roll on this does not mean a successful block is forthcoming. only that a chance to block
@@ -436,101 +451,100 @@ bool Mob::AvoidDamage(Mob* other, int32 &damage, bool CanRiposte)
 	if (BlockBehindChance && zone->random.Roll(BlockBehindChance))
 		bBlockFromRear = true;
 
-	float block_chance = 0.0f;
-	if (damage > 0 && CanThisClassBlock() && (InFront || bBlockFromRear)) {
-		block_chance = (100.0f + static_cast<float>(aabonuses.IncreaseBlockChance + spellbonuses.IncreaseBlockChance +
-			itembonuses.IncreaseBlockChance - counter_block - counter_all)) / 100.0f;
-		skill = CastToClient()->GetSkill(SkillBlock);
-		if (IsClient()) {
+	if (CanThisClassBlock() && (InFront || bBlockFromRear)) {
+		if (IsClient())
 			CastToClient()->CheckIncreaseSkill(SkillBlock, other, -10);
-		}
-
-		if (!ghit) {	//if they are not using a garunteed hit discipline
-			bonus = 2.0 + skill/35.0 + (GetDEX()/200);
-			bonus = mod_block_chance(bonus, attacker);
-			RollTable[1] = RollTable[0] + (bonus * block_chance);
-		}
-	}
-	else{
-		RollTable[1] = RollTable[0];
-	}
-
-	//Try Shield Block OR TwoHandBluntBlockCheck
-	if(damage > 0 && HasShieldEquiped()	&& (aabonuses.ShieldBlock || spellbonuses.ShieldBlock || itembonuses.ShieldBlock) && (InFront || bBlockFromRear))
-		RollTable[1] += static_cast<float>(aabonuses.ShieldBlock + spellbonuses.ShieldBlock + itembonuses.ShieldBlock - counter_block - counter_all);
-
-	else if(damage > 0 && HasTwoHandBluntEquiped() && (aabonuses.TwoHandBluntBlock || spellbonuses.TwoHandBluntBlock || itembonuses.TwoHandBluntBlock)	&&  (InFront || bBlockFromRear))
-		RollTable[1] += static_cast<float>(aabonuses.TwoHandBluntBlock + spellbonuses.TwoHandBluntBlock + itembonuses.TwoHandBluntBlock - counter_block - counter_all);
-
-	//////////////////////////////////////////////////////
-	// parry
-	//////////////////////////////////////////////////////
-	float parry_chance = 0.0f;
-	if (damage > 0 && CanThisClassParry() && InFront){
-		parry_chance = (100.0f + static_cast<float>(aabonuses.ParryChance + itembonuses.ParryChance +
-			itembonuses.ParryChance - counter_parry - counter_all)) / 100.0f;
-		skill = CastToClient()->GetSkill(SkillParry);
-		if (IsClient()) {
-			CastToClient()->CheckIncreaseSkill(SkillParry, other, -10);
-		}
-
-		if (!ghit) {	//if they are not using a garunteed hit discipline
-			bonus = 2.0 + skill/60.0 + (GetDEX()/200);
-			bonus *= parry_chance;
-			bonus = mod_parry_chance(bonus, attacker);
-			RollTable[2] = RollTable[1] + bonus;
-		}
-	}
-	else{
-		RollTable[2] = RollTable[1];
-	}
-
-	////////////////////////////////////////////////////////
-	// dodge
-	////////////////////////////////////////////////////////
-	float dodge_chance = 0.0f;
-	if (damage > 0 && CanThisClassDodge() && InFront){
-
-		dodge_chance = (100.0f + static_cast<float>(aabonuses.DodgeChance + spellbonuses.DodgeChance +
-			itembonuses.DodgeChance - counter_dodge - counter_all)) / 100.0f;
-
-		skill = CastToClient()->GetSkill(SkillDodge);
-		if (IsClient()) {
-			CastToClient()->CheckIncreaseSkill(SkillDodge, other, -10);
-		}
-
-		if (!ghit) {	//if they are not using a garunteed hit discipline
-			bonus = 2.0 + skill/60.0 + (GetAGI()/200);
-			bonus *= dodge_chance;
-			//DCBOOMKAR
-			bonus = mod_dodge_chance(bonus, attacker);
-			RollTable[3] = RollTable[2] + bonus - (itembonuses.HeroicDEX / 25) + (itembonuses.HeroicAGI / 25);
-		}
-	}
-	else{
-		RollTable[3] = RollTable[2];
-	}
-
-	if(damage > 0){
-		roll = zone->random.Real(0,100);
-		if(roll <= RollTable[0]){
-			damage = -3;
-		}
-		else if(roll <= RollTable[1]){
+		// check auto discs ... I guess aa/items too :P
+		if (spellbonuses.IncreaseBlockChance == 10000 || aabonuses.IncreaseBlockChance == 10000 ||
+		    itembonuses.IncreaseBlockChance == 10000) {
 			damage = -1;
+			return true;
 		}
-		else if(roll <= RollTable[2]){
-			damage = -2;
+		int chance = GetSkill(SkillBlock) + 100;
+		chance += (chance * (aabonuses.IncreaseBlockChance + spellbonuses.IncreaseBlockChance + itembonuses.IncreaseBlockChance)) / 100;
+		chance /= 25;
+		chance += itembonuses.HeroicDEX / 25; // live has "heroic strickthrough" here to counter
+		if (counter_block || counter_all) {
+			float counter = (counter_block + counter_all) / 100.0f;
+			chance -= chance * counter;
 		}
-		else if(roll <= RollTable[3]){
-			damage = -4;
+		if (zone->random.Roll(chance)) {
+			damage = -1;
+			return true;
 		}
 	}
 
-	Log.Out(Logs::Detail, Logs::Combat, "Final damage after all avoidances: %d", damage);
+	// parry
+	if (CanThisClassParry() && InFront && hand != MainRange) {
+		if (IsClient())
+			CastToClient()->CheckIncreaseSkill(SkillParry, other, -10);
+		// check auto discs ... I guess aa/items too :P
+		if (spellbonuses.ParryChance == 10000 || aabonuses.ParryChance == 10000 || itembonuses.ParryChance == 10000) {
+			damage = -2;
+			return true;
+		}
+		int chance = GetSkill(SkillParry) + 100;
+		chance += (chance * (aabonuses.ParryChance + spellbonuses.ParryChance + itembonuses.ParryChance)) / 100;
+		chance /= 45;
+		chance += itembonuses.HeroicDEX / 25; // live has "heroic strickthrough" here to counter
+		if (counter_parry || counter_all) {
+			float counter = (counter_parry + counter_all) / 100.0f;
+			chance -= chance * counter;
+		}
+		if (zone->random.Roll(chance)) {
+			damage = -2;
+			return true;
+		}
+	}
 
-	if (damage < 0)
-		return true;
+	// dodge
+	if (CanThisClassDodge() && (InFront || GetClass() == MONK) ) {
+		if (IsClient())
+			CastToClient()->CheckIncreaseSkill(SkillDodge, other, -10);
+		// check auto discs ... I guess aa/items too :P
+		if (spellbonuses.DodgeChance == 10000 || aabonuses.DodgeChance == 10000 || itembonuses.DodgeChance == 10000) {
+			damage = -4;
+			return true;
+		}
+		int chance = GetSkill(SkillDodge) + 100;
+		chance += (chance * (aabonuses.DodgeChance + spellbonuses.DodgeChance + itembonuses.DodgeChance)) / 100;
+		chance /= 45;
+		chance += itembonuses.HeroicAGI / 25; // live has "heroic strickthrough" here to counter
+		if (counter_dodge || counter_all) {
+			float counter = (counter_dodge + counter_all) / 100.0f;
+			chance -= chance * counter;
+		}
+		if (zone->random.Roll(chance)) {
+			damage = -4;
+			return true;
+		}
+	}
+
+	// Try Shield Block OR TwoHandBluntBlockCheck
+	if (HasShieldEquiped() && (aabonuses.ShieldBlock || spellbonuses.ShieldBlock || itembonuses.ShieldBlock) && (InFront || bBlockFromRear)) {
+		int chance = aabonuses.ShieldBlock + spellbonuses.ShieldBlock + itembonuses.ShieldBlock;
+		if (counter_block || counter_all) {
+			float counter = (counter_block + counter_all) / 100.0f;
+			chance -= chance * counter;
+		}
+		if (zone->random.Roll(chance)) {
+			damage = -1;
+			return true;
+		}
+	}
+
+	if (HasTwoHandBluntEquiped() && (aabonuses.TwoHandBluntBlock || spellbonuses.TwoHandBluntBlock || itembonuses.TwoHandBluntBlock) && (InFront || bBlockFromRear)) {
+		int chance = aabonuses.TwoHandBluntBlock + itembonuses.TwoHandBluntBlock + spellbonuses.TwoHandBluntBlock;
+		if (counter_block || counter_all) {
+			float counter = (counter_block + counter_all) / 100.0f;
+			chance -= chance * counter;
+		}
+		if (zone->random.Roll(chance)) {
+			damage = -1;
+			return true;
+		}
+	}
+
 	return false;
 }
 
@@ -1155,7 +1169,7 @@ int Mob::GetWeaponDamage(Mob *against, const ItemInst *weapon_item, uint32 *hate
 //note: throughout this method, setting `damage` to a negative is a way to
 //stop the attack calculations
 // IsFromSpell added to allow spell effects to use Attack. (Mainly for the Rampage AA right now.)
-bool Client::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool IsFromSpell, ExtraAttackOptions *opts)
+bool Client::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool IsFromSpell, ExtraAttackOptions *opts, int special)
 {
 	if (!other) {
 		SetTarget(nullptr);
@@ -1279,7 +1293,7 @@ bool Client::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, b
 		if (Hand == MainSecondary) {
 			if (aabonuses.SecondaryDmgInc || itembonuses.SecondaryDmgInc || spellbonuses.SecondaryDmgInc){
 
-				ucDamageBonus = GetWeaponDamageBonus( weapon ? weapon->GetItem() : (const Item_Struct*) nullptr );
+				ucDamageBonus = GetWeaponDamageBonus(weapon ? weapon->GetItem() : (const Item_Struct*) nullptr, true );
 
 				min_hit += (int) ucDamageBonus;
 				max_hit += (int) ucDamageBonus;
@@ -1287,6 +1301,7 @@ bool Client::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, b
 			}
 		}
 
+		// this effect is actually a min cap that happens after the final damage is calculated
 		min_hit += min_hit * GetMeleeMinDamageMod_SE(skillinuse) / 100;
 
 		if(max_hit < min_hit)
@@ -1313,67 +1328,53 @@ bool Client::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, b
 		}
 
 		//check to see if we hit..
-		if(!other->CheckHitChance(this, skillinuse, Hand, hit_chance_bonus)) {
-			Log.Out(Logs::Detail, Logs::Combat, "Attack missed. Damage set to 0.");
-			damage = 0;
-		} else {	//we hit, try to avoid it
-			other->AvoidDamage(this, damage);
-			other->MeleeMitigation(this, damage, min_hit, opts);
-			if(damage > 0)
-				CommonOutgoingHitSuccess(other, damage, skillinuse);
-
-			Log.Out(Logs::Detail, Logs::Combat, "Final damage after all reductions: %d", damage);
-		}
-
-		//riposte
-		bool slippery_attack = false; // Part of hack to allow riposte to become a miss, but still allow a Strikethrough chance (like on Live)
-		if (damage == -3) {
-			if (bRiposte) return false;
-			else {
-				if (Hand == MainSecondary) {// Do we even have it & was attack with mainhand? If not, don't bother with other calculations
-					//Live AA - SlipperyAttacks
-					//This spell effect most likely directly modifies the actual riposte chance when using offhand attack.
-					int32 OffhandRiposteFail = aabonuses.OffhandRiposteFail + itembonuses.OffhandRiposteFail + spellbonuses.OffhandRiposteFail;
-					OffhandRiposteFail *= -1; //Live uses a negative value for this.
-
-					if (OffhandRiposteFail &&
-						(OffhandRiposteFail > 99 || zone->random.Roll(OffhandRiposteFail))) {
-						damage = 0; // Counts as a miss
-						slippery_attack = true;
-					} else
-						DoRiposte(other);
-						if (IsDead()) return false;
+		if (other->AvoidDamage(this, damage, Hand)) {
+			if (!bRiposte && !IsStrikethrough) {
+				int strike_through = itembonuses.StrikeThrough + spellbonuses.StrikeThrough + aabonuses.StrikeThrough;
+				if(strike_through && zone->random.Roll(strike_through)) {
+					Message_StringID(MT_StrikeThrough, STRIKETHROUGH_STRING); // You strike through your opponents defenses!
+					Attack(other, Hand, false, true); // Strikethrough only gives another attempted hit
+					return false;
 				}
-				else
+				// I'm pretty sure you can riposte a riposte
+				if (damage == -3 && !bRiposte) {
 					DoRiposte(other);
-					if (IsDead()) return false;
+					if (IsDead())
+						return false;
+				}
+			}
+			Log.Out(Logs::Detail, Logs::Combat, "Avoided damage with code %d", damage);
+		} else {
+			if (other->CheckHitChance(this, skillinuse, Hand, hit_chance_bonus)) {
+				other->MeleeMitigation(this, damage, min_hit, opts);
+				if (damage > 0)
+					CommonOutgoingHitSuccess(other, damage, skillinuse);
+				Log.Out(Logs::Detail, Logs::Combat, "Final damage after all reductions: %d", damage);
+			} else {
+				Log.Out(Logs::Detail, Logs::Combat, "Attack missed. Damage set to 0.");
+				damage = 0;
 			}
 		}
-
-		if (((damage < 0) || slippery_attack) && !bRiposte && !IsStrikethrough) { // Hack to still allow Strikethrough chance w/ Slippery Attacks AA
-			int32 bonusStrikeThrough = itembonuses.StrikeThrough + spellbonuses.StrikeThrough + aabonuses.StrikeThrough;
-
-			if(bonusStrikeThrough && zone->random.Roll(bonusStrikeThrough)) {
-				Message_StringID(MT_StrikeThrough, STRIKETHROUGH_STRING); // You strike through your opponents defenses!
-				Attack(other, Hand, false, true); // Strikethrough only gives another attempted hit
-				return false;
-			}
-		}
-	}
-	else{
+	} else {
 		damage = -5;
 	}
 
 	// Hate Generation is on a per swing basis, regardless of a hit, miss, or block, its always the same.
 	// If we are this far, this means we are atleast making a swing.
 
-	if (!bRiposte) // Ripostes never generate any aggro.
-		other->AddToHateList(this, hate);
+	other->AddToHateList(this, hate);
 
 	///////////////////////////////////////////////////////////
 	////// Send Attack Damage
 	///////////////////////////////////////////////////////////
-	other->Damage(this, damage, SPELL_UNKNOWN, skillinuse);
+	if (damage > 0 && aabonuses.SkillAttackProc[0] && aabonuses.SkillAttackProc[1] == skillinuse &&
+	    IsValidSpell(aabonuses.SkillAttackProc[2])) {
+		float chance = aabonuses.SkillAttackProc[0] / 1000.0f;
+		if (zone->random.Roll(chance))
+			SpellFinished(aabonuses.SkillAttackProc[2], other, 10, 0, -1,
+				      spells[aabonuses.SkillAttackProc[2]].ResistDiff);
+	}
+	other->Damage(this, damage, SPELL_UNKNOWN, skillinuse, true, -1, false, special);
 
 	if (IsDead()) return false;
 
@@ -1401,7 +1402,7 @@ void Mob::Heal()
 	SendHPUpdate();
 }
 
-void Client::Damage(Mob* other, int32 damage, uint16 spell_id, SkillUseTypes attack_skill, bool avoidable, int8 buffslot, bool iBuffTic)
+void Client::Damage(Mob* other, int32 damage, uint16 spell_id, SkillUseTypes attack_skill, bool avoidable, int8 buffslot, bool iBuffTic, int special)
 {
 	if(dead || IsCorpse())
 		return;
@@ -1425,7 +1426,7 @@ void Client::Damage(Mob* other, int32 damage, uint16 spell_id, SkillUseTypes att
 		damage = -5;
 
 	//do a majority of the work...
-	CommonDamage(other, damage, spell_id, attack_skill, avoidable, buffslot, iBuffTic);
+	CommonDamage(other, damage, spell_id, attack_skill, avoidable, buffslot, iBuffTic, special);
 
 	if (damage > 0) {
 
@@ -1719,7 +1720,7 @@ bool Client::Death(Mob* killerMob, int32 damage, uint16 spell, SkillUseTypes att
 	return true;
 }
 
-bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool IsFromSpell, ExtraAttackOptions *opts)
+bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool IsFromSpell, ExtraAttackOptions *opts, int special)
 {
 	int damage = 0;
 
@@ -1906,21 +1907,18 @@ bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool
 				hit_chance_bonus += opts->hit_chance;
 			}
 
-			if(!other->CheckHitChance(this, skillinuse, Hand, hit_chance_bonus)) {
-				damage = 0;	//miss
-			} else {	//hit, check for damage avoidance
-				other->AvoidDamage(this, damage);
-				other->MeleeMitigation(this, damage, min_dmg+eleBane, opts);
-				if(damage > 0) {
+			if (other->AvoidDamage(this, damage, Hand)) {
+				if (!bRiposte && damage == -3)
+					DoRiposte(other);
+			} else {
+				if (other->CheckHitChance(this, skillinuse, Hand, hit_chance_bonus)) {
+					other->MeleeMitigation(this, damage, min_dmg+eleBane, opts);
 					CommonOutgoingHitSuccess(other, damage, skillinuse);
+				} else {
+					damage = 0;
 				}
-				Log.Out(Logs::Detail, Logs::Combat, "Generating hate %d towards %s", hate, GetName());
-				// now add done damage to the hate list
-				if(damage > 0)
-					other->AddToHateList(this, hate);
-				else
-					other->AddToHateList(this, 0);
 			}
+			other->AddToHateList(this, hate);
 		}
 
 		Log.Out(Logs::Detail, Logs::Combat, "Final damage against %s: %d", other->GetName(), damage);
@@ -1933,14 +1931,8 @@ bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool
 	else
 		damage = -5;
 
-	//cant riposte a riposte
-	if (bRiposte && damage == -3) {
-		Log.Out(Logs::Detail, Logs::Combat, "Riposte of riposte canceled.");
-		return false;
-	}
-
 	if(GetHP() > 0 && !other->HasDied()) {
-		other->Damage(this, damage, SPELL_UNKNOWN, skillinuse, false); // Not avoidable client already had thier chance to Avoid
+		other->Damage(this, damage, SPELL_UNKNOWN, skillinuse, true, -1, false, special); // Not avoidable client already had thier chance to Avoid
 	} else
 		return false;
 
@@ -1968,11 +1960,6 @@ bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool
 	if(GetHP() > 0 && !other->HasDied())
 		TriggerDefensiveProcs(nullptr, other, Hand, damage);
 
-	// now check ripostes
-	if (damage == -3) { // riposting
-		DoRiposte(other);
-	}
-
 	if (damage > 0)
 		return true;
 
@@ -1980,7 +1967,7 @@ bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool
 		return false;
 }
 
-void NPC::Damage(Mob* other, int32 damage, uint16 spell_id, SkillUseTypes attack_skill, bool avoidable, int8 buffslot, bool iBuffTic) {
+void NPC::Damage(Mob* other, int32 damage, uint16 spell_id, SkillUseTypes attack_skill, bool avoidable, int8 buffslot, bool iBuffTic, int special) {
 	if(spell_id==0)
 		spell_id = SPELL_UNKNOWN;
 
@@ -2015,7 +2002,7 @@ void NPC::Damage(Mob* other, int32 damage, uint16 spell_id, SkillUseTypes attack
 	}
 
 	//do a majority of the work...
-	CommonDamage(other, damage, spell_id, attack_skill, avoidable, buffslot, iBuffTic);
+	CommonDamage(other, damage, spell_id, attack_skill, avoidable, buffslot, iBuffTic, special);
 
 	if(damage > 0) {
 		//see if we are gunna start fleeing
@@ -2457,17 +2444,23 @@ void Mob::AddToHateList(Mob* other, uint32 hate /*= 0*/, int32 damage /*= 0*/, b
 	Mob* targetmob = this->GetTarget();
 
 	if(other){
+		bool on_hatelist = CheckAggro(other);
 		AddRampage(other);
-		int hatemod = 100 + other->spellbonuses.hatemod + other->itembonuses.hatemod + other->aabonuses.hatemod;
+		if (on_hatelist) { // odd reason, if you're not on the hate list, subtlety etc don't apply!
+			// Spell Casting Subtlety etc
+			int hatemod = 100 + other->spellbonuses.hatemod + other->itembonuses.hatemod + other->aabonuses.hatemod;
 
-		int32 shieldhatemod = other->spellbonuses.ShieldEquipHateMod + other->itembonuses.ShieldEquipHateMod + other->aabonuses.ShieldEquipHateMod;
+			int32 shieldhatemod = other->spellbonuses.ShieldEquipHateMod + other->itembonuses.ShieldEquipHateMod + other->aabonuses.ShieldEquipHateMod;
 
-		if (shieldhatemod && other->HasShieldEquiped())
-			hatemod += shieldhatemod;
+			if (shieldhatemod && other->HasShieldEquiped())
+				hatemod += shieldhatemod;
 
-		if(hatemod < 1)
-			hatemod = 1;
-		hate = ((hate * (hatemod))/100);
+			if(hatemod < 1)
+				hatemod = 1;
+			hate = ((hate * (hatemod))/100);
+		} else {
+			hate += 100; // 100 bonus initial aggro
+		}
 	}
 
 	if(IsPet() && GetOwner() && GetOwner()->GetAA(aaPetDiscipline) && IsHeld() && !IsFocused()) { //ignore aggro if hold and !focus
@@ -2678,410 +2671,45 @@ void Mob::DamageShield(Mob* attacker, bool spell_ds) {
 	}
 }
 
-uint8 Mob::GetWeaponDamageBonus( const Item_Struct *Weapon )
+uint8 Mob::GetWeaponDamageBonus(const Item_Struct *weapon, bool offhand)
 {
-	// This function calculates and returns the damage bonus for the weapon identified by the parameter "Weapon".
-	// Modified 9/21/2008 by Cantus
-
-	// Assert: This function should only be called for hits by the mainhand, as damage bonuses apply only to the
-	// weapon in the primary slot. Be sure to check that Hand == MainPrimary before calling.
-
-	// Assert: The caller should ensure that Weapon is actually a weapon before calling this function.
-	// The ItemInst::IsWeapon() method can be used to quickly determine this.
-
-	// Assert: This function should not be called if the player's level is below 28, as damage bonuses do not begin
-	// to apply until level 28.
-
-	// Assert: This function should not be called unless the player is a melee class, as casters do not receive a damage bonus.
-
-	if( Weapon == nullptr || Weapon->ItemType == ItemType1HSlash || Weapon->ItemType == ItemType1HBlunt || Weapon->ItemType == ItemTypeMartial || Weapon->ItemType == ItemType1HPiercing )
-	{
-		// The weapon in the player's main (primary) hand is a one-handed weapon, or there is no item equipped at all.
-		//
-		// According to player posts on Allakhazam, 1H damage bonuses apply to bare fists (nothing equipped in the mainhand,
-		// as indicated by Weapon == nullptr).
-		//
-		// The following formula returns the correct damage bonus for all 1H weapons:
-
-		return (uint8) ((GetLevel() - 25) / 3);
-	}
-
-	// If we've gotten to this point, the weapon in the mainhand is a two-handed weapon.
-	// Calculating damage bonuses for 2H weapons is more complicated, as it's based on PC level AND the delay of the weapon.
-	// The formula to calculate 2H bonuses is HIDEOUS. It's a huge conglomeration of ternary operators and multiple operations.
+	// dev quote with old and new formulas
+	// https://forums.daybreakgames.com/eq/index.php?threads/test-update-09-17-15.226618/page-5#post-3326194
 	//
-	// The following is a hybrid approach. In cases where the Level and Delay merit a formula that does not use many operators,
-	// the formula is used. In other cases, lookup tables are used for speed.
-	// Though the following code may look bloated and ridiculous, it's actually a very efficient way of calculating these bonuses.
+	// We assume that the level check is done before calling this function and sinister strikes is checked before
+	// calling for offhand DB
+	auto level = GetLevel();
+	if (!weapon)
+		return 1 + ((level - 28) / 3); // how does weaponless scale?
 
-	// Player Level is used several times in the code below, so save it into a variable.
-	// If GetLevel() were an ordinary function, this would DEFINITELY make sense, as it'd cut back on all of the function calling
-	// overhead involved with multiple calls to GetLevel(). But in this case, GetLevel() is a simple, inline accessor method.
-	// So it probably doesn't matter. If anyone knows for certain that there is no overhead involved with calling GetLevel(),
-	// as I suspect, then please feel free to delete the following line, and replace all occurences of "ucPlayerLevel" with "GetLevel()".
-	uint8 ucPlayerLevel = (uint8) GetLevel();
-
-	// The following may look cleaner, and would certainly be easier to understand, if it was
-	// a simple 53x150 cell matrix.
-	//
-	// However, that would occupy 7,950 Bytes of memory (7.76 KB), and would likely result
-	// in "thrashing the cache" when performing lookups.
-	//
-	// Initially, I thought the best approach would be to reverse-engineer the formula used by
-	// Sony/Verant to calculate these 2H weapon damage bonuses. But the more than Reno and I
-	// worked on figuring out this formula, the more we're concluded that the formula itself ugly
-	// (that is, it contains so many operations and conditionals that it's fairly CPU intensive).
-	// Because of that, we're decided that, in most cases, a lookup table is the most efficient way
-	// to calculate these damage bonuses.
-	//
-	// The code below is a hybrid between a pure formulaic approach and a pure, brute-force
-	// lookup table. In cases where a formula is the best bet, I use a formula. In other places
-	// where a formula would be ugly, I use a lookup table in the interests of speed.
-
-	if( Weapon->Delay <= 27 )
-	{
-		// Damage Bonuses for all 2H weapons with delays of 27 or less are identical.
-		// They are the same as the damage bonus would be for a corresponding 1H weapon, plus one.
-		// This formula applies to all levels 28-80, and will probably continue to apply if
-
-		// the level cap on Live ever is increased beyond 80.
-
-		return (ucPlayerLevel - 22) / 3;
-	}
-
-	if( ucPlayerLevel == 65 && Weapon->Delay <= 59 )
-	{
-		// Consider these two facts:
-		// * Level 65 is the maximum level on many EQ Emu servers.
-		// * If you listed the levels of all characters logged on to a server, odds are that the number you'll
-		// see most frequently is level 65. That is, there are more level 65 toons than any other single level.
-		//
-		// Therefore, if we can optimize this function for level 65 toons, we're speeding up the server!
-		//
-		// With that goal in mind, I create an array of Damage Bonuses for level 65 characters wielding 2H weapons with
-		// delays between 28 and 59 (inclusive). I suspect that this one small lookup array will therefore handle
-		// many of the calls to this function.
-
-		static const uint8 ucLevel65DamageBonusesForDelays28to59[] = {35, 35, 36, 36, 37, 37, 38, 38, 39, 39, 40, 40, 42, 42, 42, 45, 45, 47, 48, 49, 49, 51, 51, 52, 53, 54, 54, 56, 56, 57, 58, 59};
-
-		return ucLevel65DamageBonusesForDelays28to59[Weapon->Delay-28];
-	}
-
-	if( ucPlayerLevel > 65 )
-	{
-		if( ucPlayerLevel > 80 )
-		{
-			// As level 80 is currently the highest achievable level on Live, we only include
-			// damage bonus information up to this level.
-			//
-			// If there is a custom EQEmu server that allows players to level beyond 80, the
-			// damage bonus for their 2H weapons will simply not increase beyond their damage
-			// bonus at level 80.
-
-			ucPlayerLevel = 80;
+	auto delay = weapon->Delay;
+	if (weapon->ItemType == ItemType1HSlash || weapon->ItemType == ItemType1HBlunt ||
+	    weapon->ItemType == ItemTypeMartial || weapon->ItemType == ItemType1HPiercing) {
+		// we assume sinister strikes is checked before calling here
+		if (!offhand) {
+			if (delay <= 39)
+				return 1 + ((level - 28) / 3);
+			else if (delay < 43)
+				return 2 + ((level - 28) / 3) + ((delay - 40) / 3);
+			else if (delay < 45)
+				return 3 + ((level - 28) / 3) + ((delay - 40) / 3);
+			else if (delay >= 45)
+				return 4 + ((level - 28) / 3) + ((delay - 40) / 3);
+		} else {
+			return 1 + ((level - 40) / 3) * (delay / 30); // YOOO shit's useless waste of AAs
 		}
-
-		// Lucy does not list a chart of damage bonuses for players levels 66+,
-		// so my original version of this function just applied the level 65 damage
-		// bonus for level 66+ toons. That sucked for higher level toons, as their
-		// 2H weapons stopped ramping up in DPS as they leveled past 65.
-		//
-		// Thanks to the efforts of two guys, this is no longer the case:
-		//
-		// Janusd (Zetrakyl) ran a nifty query against the PEQ item database to list
-		// the name of an example 2H weapon that represents each possible unique 2H delay.
-		//
-		// Romai then wrote an excellent script to automatically look up each of those
-		// weapons, open the Lucy item page associated with it, and iterate through all
-		// levels in the range 66 - 80. He saved the damage bonus for that weapon for
-		// each level, and that forms the basis of the lookup tables below.
-
-		if( Weapon->Delay <= 59 )
-		{
-			static const uint8 ucDelay28to59Levels66to80[32][15]=
-			{
-			/*							Level:								*/
-			/*	 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80	*/
-
-				{36, 37, 38, 39, 41, 42, 43, 44, 45, 47, 49, 49, 49, 50, 53},	/* Delay = 28 */
-				{36, 38, 38, 39, 42, 43, 43, 45, 46, 48, 49, 50, 51, 52, 54},	/* Delay = 29 */
-				{37, 38, 39, 40, 43, 43, 44, 46, 47, 48, 50, 51, 52, 53, 55},	/* Delay = 30 */
-				{37, 39, 40, 40, 43, 44, 45, 46, 47, 49, 51, 52, 52, 52, 54},	/* Delay = 31 */
-				{38, 39, 40, 41, 44, 45, 45, 47, 48, 48, 50, 52, 53, 55, 57},	/* Delay = 32 */
-				{38, 40, 41, 41, 44, 45, 46, 48, 49, 50, 52, 53, 54, 56, 58},	/* Delay = 33 */
-				{39, 40, 41, 42, 45, 46, 47, 48, 49, 51, 53, 54, 55, 57, 58},	/* Delay = 34 */
-				{39, 41, 42, 43, 46, 46, 47, 49, 50, 52, 54, 55, 56, 57, 59},	/* Delay = 35 */
-				{40, 41, 42, 43, 46, 47, 48, 50, 51, 53, 55, 55, 56, 58, 60},	/* Delay = 36 */
-				{40, 42, 43, 44, 47, 48, 49, 50, 51, 53, 55, 56, 57, 59, 61},	/* Delay = 37 */
-				{41, 42, 43, 44, 47, 48, 49, 51, 52, 54, 56, 57, 58, 60, 62},	/* Delay = 38 */
-				{41, 43, 44, 45, 48, 49, 50, 52, 53, 55, 57, 58, 59, 61, 63},	/* Delay = 39 */
-				{43, 45, 46, 47, 50, 51, 52, 54, 55, 57, 59, 60, 61, 63, 65},	/* Delay = 40 */
-				{43, 45, 46, 47, 50, 51, 52, 54, 55, 57, 59, 60, 61, 63, 65},	/* Delay = 41 */
-				{44, 46, 47, 48, 51, 52, 53, 55, 56, 58, 60, 61, 62, 64, 66},	/* Delay = 42 */
-				{46, 48, 49, 50, 53, 54, 55, 58, 59, 61, 63, 64, 65, 67, 69},	/* Delay = 43 */
-				{47, 49, 50, 51, 54, 55, 56, 58, 59, 61, 64, 65, 66, 68, 70},	/* Delay = 44 */
-				{48, 50, 51, 52, 56, 57, 58, 60, 61, 63, 65, 66, 68, 70, 72},	/* Delay = 45 */
-				{50, 52, 53, 54, 57, 58, 59, 62, 63, 65, 67, 68, 69, 71, 74},	/* Delay = 46 */
-				{50, 52, 53, 55, 58, 59, 60, 62, 63, 66, 68, 69, 70, 72, 74},	/* Delay = 47 */
-				{51, 53, 54, 55, 58, 60, 61, 63, 64, 66, 69, 69, 71, 73, 75},	/* Delay = 48 */
-				{52, 54, 55, 57, 60, 61, 62, 65, 66, 68, 70, 71, 73, 75, 77},	/* Delay = 49 */
-				{53, 55, 56, 57, 61, 62, 63, 65, 67, 69, 71, 72, 74, 76, 78},	/* Delay = 50 */
-				{53, 55, 57, 58, 61, 62, 64, 66, 67, 69, 72, 73, 74, 77, 79},	/* Delay = 51 */
-				{55, 57, 58, 59, 63, 64, 65, 68, 69, 71, 74, 75, 76, 78, 81},	/* Delay = 52 */
-				{57, 55, 59, 60, 63, 65, 66, 68, 70, 72, 74, 76, 77, 79, 82},	/* Delay = 53 */
-				{56, 58, 59, 61, 64, 65, 67, 69, 70, 73, 75, 76, 78, 80, 82},	/* Delay = 54 */
-				{57, 59, 61, 62, 66, 67, 68, 71, 72, 74, 77, 78, 80, 82, 84},	/* Delay = 55 */
-				{58, 60, 61, 63, 66, 68, 69, 71, 73, 75, 78, 79, 80, 83, 85},	/* Delay = 56 */
-
-				/* Important Note: Janusd's search for 2H weapons did not find	*/
-				/* any 2H weapon with a delay of 57. Therefore the values below	*/
-				/* are interpolated, not exact!									*/
-				{59, 61, 62, 64, 67, 69, 70, 72, 74, 76, 77, 78, 81, 84, 86},	/* Delay = 57 INTERPOLATED */
-
-				{60, 62, 63, 65, 68, 70, 71, 74, 75, 78, 80, 81, 83, 85, 88},	/* Delay = 58 */
-
-				/* Important Note: Janusd's search for 2H weapons did not find	*/
-				/* any 2H weapon with a delay of 59. Therefore the values below	*/
-				/* are interpolated, not exact!									*/
-				{60, 62, 64, 65, 69, 70, 72, 74, 76, 78, 81, 82, 84, 86, 89},	/* Delay = 59 INTERPOLATED */
-			};
-
-			return ucDelay28to59Levels66to80[Weapon->Delay-28][ucPlayerLevel-66];
-		}
-		else
-		{
-			// Delay is 60+
-
-			const static uint8 ucDelayOver59Levels66to80[6][15] =
-			{
-			/*							Level:								*/
-			/*	 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80	*/
-
-				{61, 63, 65, 66, 70, 71, 73, 75, 77, 79, 82, 83, 85, 87, 90},				/* Delay = 60 */
-				{65, 68, 69, 71, 75, 76, 78, 80, 82, 85, 87, 89, 91, 93, 96},				/* Delay = 65 */
-
-				/* Important Note: Currently, the only 2H weapon with a delay	*/
-				/* of 66 is not player equippable (it's None/None). So I'm		*/
-				/* leaving it commented out to keep this table smaller.			*/
-				//{66, 68, 70, 71, 75, 77, 78, 81, 83, 85, 88, 90, 91, 94, 97},				/* Delay = 66 */
-
-				{70, 72, 74, 76, 80, 81, 83, 86, 88, 88, 90, 95, 97, 99, 102},				/* Delay = 70 */
-				{82, 85, 87, 89, 89, 94, 98, 101, 103, 106, 109, 111, 114, 117, 120},		/* Delay = 85 */
-				{90, 93, 96, 98, 103, 105, 107, 111, 113, 116, 120, 122, 125, 128, 131},	/* Delay = 95 */
-
-				/* Important Note: Currently, the only 2H weapons with delay	*/
-				/* 100 are GM-only items purchased from vendors in Sunset Home	*/
-				/* (cshome). Because they are highly unlikely to be used in		*/
-				/* combat, I'm commenting it out to keep the table smaller.		*/
-				//{95, 98, 101, 103, 108, 110, 113, 116, 119, 122, 126, 128, 131, 134, 138},/* Delay = 100 */
-
-				{136, 140, 144, 148, 154, 157, 161, 166, 170, 174, 179, 183, 187, 191, 196}	/* Delay = 150 */
-			};
-
-			if( Weapon->Delay < 65 )
-			{
-				return ucDelayOver59Levels66to80[0][ucPlayerLevel-66];
-			}
-			else if( Weapon->Delay < 70 )
-			{
-				return ucDelayOver59Levels66to80[1][ucPlayerLevel-66];
-			}
-			else if( Weapon->Delay < 85 )
-			{
-				return ucDelayOver59Levels66to80[2][ucPlayerLevel-66];
-			}
-			else if( Weapon->Delay < 95 )
-			{
-				return ucDelayOver59Levels66to80[3][ucPlayerLevel-66];
-			}
-			else if( Weapon->Delay < 150 )
-			{
-				return ucDelayOver59Levels66to80[4][ucPlayerLevel-66];
-			}
-			else
-			{
-				return ucDelayOver59Levels66to80[5][ucPlayerLevel-66];
-			}
-		}
-	}
-
-	// If we've gotten to this point in the function without hitting a return statement,
-	// we know that the character's level is between 28 and 65, and that the 2H weapon's
-	// delay is 28 or higher.
-
-	// The Damage Bonus values returned by this function (in the level 28-65 range) are
-	// based on a table of 2H Weapon Damage Bonuses provided by Lucy at the following address:
-	// http://lucy.allakhazam.com/dmgbonus.html
-
-	if( Weapon->Delay <= 39 )
-	{
-		if( ucPlayerLevel <= 53)
-		{
-			// The Damage Bonus for all 2H weapons with delays between 28 and 39 (inclusive) is the same for players level 53 and below...
-			static const uint8 ucDelay28to39LevelUnder54[] = {1, 1, 2, 3, 3, 3, 4, 5, 5, 6, 6, 6, 8, 8, 8, 9, 9, 10, 11, 11, 11, 12, 13, 14, 16, 17};
-
-			// As a note: The following formula accurately calculates damage bonuses for 2H weapons with delays in the range 28-39 (inclusive)
-			// for characters levels 28-50 (inclusive):
-			// return ( (ucPlayerLevel - 22) / 3 ) + ( (ucPlayerLevel - 25) / 5 );
-			//
-			// However, the small lookup array used above is actually much faster. So we'll just use it instead of the formula
-			//
-			// (Thanks to Reno for helping figure out the above formula!)
-
-			return ucDelay28to39LevelUnder54[ucPlayerLevel-28];
-		}
-		else
-		{
-			// Use a matrix to look up the damage bonus for 2H weapons with delays between 28 and 39 wielded by characters level 54 and above.
-			static const uint8 ucDelay28to39Level54to64[12][11] =
-			{
-			/*						Level:					*/
-			/*	 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64	*/
-
-				{17, 21, 21, 23, 25, 26, 28, 30, 31, 31, 33},	/* Delay = 28 */
-				{17, 21, 22, 23, 25, 26, 29, 30, 31, 32, 34},	/* Delay = 29 */
-				{18, 21, 22, 23, 25, 27, 29, 31, 32, 32, 34},	/* Delay = 30 */
-				{18, 21, 22, 23, 25, 27, 29, 31, 32, 33, 34},	/* Delay = 31 */
-				{18, 21, 22, 24, 26, 27, 30, 32, 32, 33, 35},	/* Delay = 32 */
-				{18, 21, 22, 24, 26, 27, 30, 32, 33, 34, 35},	/* Delay = 33 */
-				{18, 22, 22, 24, 26, 28, 30, 32, 33, 34, 36},	/* Delay = 34 */
-				{18, 22, 23, 24, 26, 28, 31, 33, 34, 34, 36},	/* Delay = 35 */
-				{18, 22, 23, 25, 27, 28, 31, 33, 34, 35, 37},	/* Delay = 36 */
-				{18, 22, 23, 25, 27, 29, 31, 33, 34, 35, 37},	/* Delay = 37 */
-				{18, 22, 23, 25, 27, 29, 32, 34, 35, 36, 38},	/* Delay = 38 */
-				{18, 22, 23, 25, 27, 29, 32, 34, 35, 36, 38}	/* Delay = 39 */
-			};
-
-			return ucDelay28to39Level54to64[Weapon->Delay-28][ucPlayerLevel-54];
-		}
-	}
-	else if( Weapon->Delay <= 59 )
-	{
-		if( ucPlayerLevel <= 52 )
-		{
-			if( Weapon->Delay <= 45 )
-			{
-				static const uint8 ucDelay40to45Levels28to52[6][25] =
-				{
-				/*												Level:														*/
-				/*	 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52		*/
-
-					{2,  2,  3,  4,  4,  4,  5,  6,  6,  7,  7,  7,  9,  9,  9,  10, 10, 11, 12, 12, 12, 13, 14, 16, 18},	/* Delay = 40 */
-					{2,  2,  3,  4,  4,  4,  5,  6,  6,  7,  7,  7,  9,  9,  9,  10, 10, 11, 12, 12, 12, 13, 14, 16, 18},	/* Delay = 41 */
-					{2,  2,  3,  4,  4,  4,  5,  6,  6,  7,  7,  7,  9,  9,  9,  10, 10, 11, 12, 12, 12, 13, 14, 16, 18},	/* Delay = 42 */
-					{4,  4,  5,  6,  6,  6,  7,  8,  8,  9,  9,  9,  11, 11, 11, 12, 12, 13, 14, 14, 14, 15, 16, 18, 20},	/* Delay = 43 */
-					{4,  4,  5,  6,  6,  6,  7,  8,  8,  9,  9,  9,  11, 11, 11, 12, 12, 13, 14, 14, 14, 15, 16, 18, 20},	/* Delay = 44 */
-					{5,  5,  6,  7,  7,  7,  8,  9,  9,  10, 10, 10, 12, 12, 12, 13, 13, 14, 15, 15, 15, 16, 17, 19, 21} 	/* Delay = 45 */
-				};
-
-				return ucDelay40to45Levels28to52[Weapon->Delay-40][ucPlayerLevel-28];
-			}
-			else
-			{
-				static const uint8 ucDelay46Levels28to52[] = {6, 6, 7, 8, 8, 8, 9, 10, 10, 11, 11, 11, 13, 13, 13, 14, 14, 15, 16, 16, 16, 17, 18, 20, 22};
-
-				return ucDelay46Levels28to52[ucPlayerLevel-28] + ((Weapon->Delay-46) / 3);
-			}
-		}
-		else
-		{
-			// Player is in the level range 53 - 64
-
-			// Calculating damage bonus for 2H weapons with a delay between 40 and 59 (inclusive) involves, unforunately, a brute-force matrix lookup.
-			static const uint8 ucDelay40to59Levels53to64[20][37] =
-			{
-			/*						Level:							*/
-			/*	 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64		*/
-
-				{19, 20, 24, 25, 27, 29, 31, 34, 36, 37, 38, 40},	/* Delay = 40 */
-				{19, 20, 24, 25, 27, 29, 31, 34, 36, 37, 38, 40},	/* Delay = 41 */
-				{19, 20, 24, 25, 27, 29, 31, 34, 36, 37, 38, 40},	/* Delay = 42 */
-				{21, 22, 26, 27, 29, 31, 33, 37, 39, 40, 41, 43},	/* Delay = 43 */
-				{21, 22, 26, 27, 29, 32, 34, 37, 39, 40, 41, 43},	/* Delay = 44 */
-				{22, 23, 27, 28, 31, 33, 35, 38, 40, 42, 43, 45},	/* Delay = 45 */
-				{23, 24, 28, 30, 32, 34, 36, 40, 42, 43, 44, 46},	/* Delay = 46 */
-				{23, 24, 29, 30, 32, 34, 37, 40, 42, 43, 44, 47},	/* Delay = 47 */
-				{23, 24, 29, 30, 32, 35, 37, 40, 43, 44, 45, 47},	/* Delay = 48 */
-				{24, 25, 30, 31, 34, 36, 38, 42, 44, 45, 46, 49},	/* Delay = 49 */
-				{24, 26, 30, 31, 34, 36, 39, 42, 44, 46, 47, 49},	/* Delay = 50 */
-				{24, 26, 30, 31, 34, 36, 39, 42, 45, 46, 47, 49},	/* Delay = 51 */
-				{25, 27, 31, 33, 35, 38, 40, 44, 46, 47, 49, 51},	/* Delay = 52 */
-				{25, 27, 31, 33, 35, 38, 40, 44, 46, 48, 49, 51},	/* Delay = 53 */
-				{26, 27, 32, 33, 36, 38, 41, 44, 47, 48, 49, 52},	/* Delay = 54 */
-				{27, 28, 33, 34, 37, 39, 42, 46, 48, 50, 51, 53},	/* Delay = 55 */
-				{27, 28, 33, 34, 37, 40, 42, 46, 49, 50, 51, 54},	/* Delay = 56 */
-				{27, 28, 33, 34, 37, 40, 43, 46, 49, 50, 52, 54},	/* Delay = 57 */
-				{28, 29, 34, 36, 39, 41, 44, 48, 50, 52, 53, 56},	/* Delay = 58 */
-				{28, 29, 34, 36, 39, 41, 44, 48, 51, 52, 54, 56}	/* Delay = 59 */
-			};
-
-			return ucDelay40to59Levels53to64[Weapon->Delay-40][ucPlayerLevel-53];
-		}
-	}
-	else
-	{
-		// The following table allows us to look up Damage Bonuses for weapons with delays greater than or equal to 60.
-		//
-		// There aren't a lot of 2H weapons with a delay greater than 60. In fact, both a database and Lucy search run by janusd confirm
-		// that the only unique 2H delays greater than 60 are: 65, 70, 85, 95, and 150.
-		//
-		// To be fair, there are also weapons with delays of 66 and 100. But they are either not equippable (None/None), or are
-		// only available to GMs from merchants in Sunset Home (cshome). In order to keep this table "lean and mean", I will not
-		// include the values for delays 66 and 100. If they ever are wielded, the 66 delay weapon will use the 65 delay bonuses,
-		// and the 100 delay weapon will use the 95 delay bonuses. So it's not a big deal.
-		//
-		// Still, if someone in the future decides that they do want to include them, here are the tables for these two delays:
-		//
-		// {12, 12, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, 19, 19, 19, 20, 20, 21, 22, 22, 22, 23, 24, 26, 29, 30, 32, 37, 39, 42, 45, 48, 53, 55, 57, 59, 61, 64}		/* Delay = 66 */
-		// {24, 24, 25, 26, 26, 26, 27, 28, 28, 29, 29, 29, 31, 31, 31, 32, 32, 33, 34, 34, 34, 35, 36, 39, 43, 45, 48, 55, 57, 62, 66, 71, 77, 80, 83, 85, 89, 92}		/* Delay = 100 */
-		//
-		// In case there are 2H weapons added in the future with delays other than those listed above (and until the damage bonuses
-		// associated with that new delay are added to this function), this function is designed to do the following:
-		//
-		//		For weapons with delays in the range 60-64, use the Damage Bonus that would apply to a 2H weapon with delay 60.
-		//		For weapons with delays in the range 65-69, use the Damage Bonus that would apply to a 2H weapon with delay 65
-		//		For weapons with delays in the range 70-84, use the Damage Bonus that would apply to a 2H weapon with delay 70.
-		//		For weapons with delays in the range 85-94, use the Damage Bonus that would apply to a 2H weapon with delay 85.
-		//		For weapons with delays in the range 95-149, use the Damage Bonus that would apply to a 2H weapon with delay 95.
-		//		For weapons with delays 150 or higher, use the Damage Bonus that would apply to a 2H weapon with delay 150.
-
-		static const uint8 ucDelayOver59Levels28to65[6][38] =
-		{
-		/*																	Level:																					*/
-		/*	 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64. 65	*/
-
-			{10, 10, 11, 12, 12, 12, 13, 14, 14, 15, 15, 15, 17, 17, 17, 18, 18, 19, 20, 20, 20, 21, 22, 24, 27, 28, 30, 35, 36, 39, 42, 45, 49, 51, 53, 54, 57, 59},		/* Delay = 60 */
-			{12, 12, 13, 14, 14, 14, 15, 16, 16, 17, 17, 17, 19, 19, 19, 20, 20, 21, 22, 22, 22, 23, 24, 26, 29, 30, 32, 37, 39, 42, 45, 48, 52, 55, 57, 58, 61, 63},		/* Delay = 65 */
-			{14, 14, 15, 16, 16, 16, 17, 18, 18, 19, 19, 19, 21, 21, 21, 22, 22, 23, 24, 24, 24, 25, 26, 28, 31, 33, 35, 40, 42, 45, 48, 52, 56, 59, 61, 62, 65, 68},		/* Delay = 70 */
-			{19, 19, 20, 21, 21, 21, 22, 23, 23, 24, 24, 24, 26, 26, 26, 27, 27, 28, 29, 29, 29, 30, 31, 34, 37, 39, 41, 47, 49, 54, 57, 61, 66, 69, 72, 74, 77, 80},		/* Delay = 85 */
-			{22, 22, 23, 24, 24, 24, 25, 26, 26, 27, 27, 27, 29, 29, 29, 30, 30, 31, 32, 32, 32, 33, 34, 37, 40, 43, 45, 52, 54, 59, 62, 67, 73, 76, 79, 81, 84, 88},		/* Delay = 95 */
-			{40, 40, 41, 42, 42, 42, 43, 44, 44, 45, 45, 45, 47, 47, 47, 48, 48, 49, 50, 50, 50, 51, 52, 56, 61, 65, 69, 78, 82, 89, 94, 102, 110, 115, 119, 122, 127, 132}	/* Delay = 150 */
-		};
-
-		if( Weapon->Delay < 65 )
-		{
-			return ucDelayOver59Levels28to65[0][ucPlayerLevel-28];
-		}
-		else if( Weapon->Delay < 70 )
-		{
-			return ucDelayOver59Levels28to65[1][ucPlayerLevel-28];
-		}
-		else if( Weapon->Delay < 85 )
-		{
-			return ucDelayOver59Levels28to65[2][ucPlayerLevel-28];
-		}
-		else if( Weapon->Delay < 95 )
-		{
-			return ucDelayOver59Levels28to65[3][ucPlayerLevel-28];
-		}
-		else if( Weapon->Delay < 150 )
-		{
-			return ucDelayOver59Levels28to65[4][ucPlayerLevel-28];
-		}
-		else
-		{
-			return ucDelayOver59Levels28to65[5][ucPlayerLevel-28];
-		}
+	} else {
+		// 2h damage bonus
+		if (delay <= 27)
+			return 1 + ((level - 28) / 3);
+		else if (delay < 40)
+			return 1 + ((level - 28) / 3) + ((level - 30) / 5);
+		else if (delay < 43)
+			return 2 + ((level - 28) / 3) + ((level - 30) / 5) + ((delay - 40) / 3);
+		else if (delay < 45)
+			return 3 + ((level - 28) / 3) + ((level - 30) / 5) + ((delay - 40) / 3);
+		else if (delay >= 45)
+			return 4 + ((level - 28) / 3) + ((level - 30) / 5) + ((delay - 40) / 3);
 	}
 }
 
@@ -3434,41 +3062,39 @@ bool Mob::HasRangedProcs() const
 	return false;
 }
 
-bool Client::CheckDoubleAttack(bool tripleAttack) {
-
+bool Client::CheckDoubleAttack()
+{
+	int chance = 0;
+	int skill = GetSkill(SkillDoubleAttack);
 	//Check for bonuses that give you a double attack chance regardless of skill (ie Bestial Frenzy/Harmonious Attack AA)
-	uint32 bonusGiveDA = aabonuses.GiveDoubleAttack + spellbonuses.GiveDoubleAttack + itembonuses.GiveDoubleAttack;
-
-	if(!HasSkill(SkillDoubleAttack) && !bonusGiveDA)
+	int bonusGiveDA = aabonuses.GiveDoubleAttack + spellbonuses.GiveDoubleAttack + itembonuses.GiveDoubleAttack;
+	if (skill > 0)
+		chance = skill + GetLevel();
+	else if (!bonusGiveDA)
 		return false;
 
-	float chance = 0.0f;
+	if (bonusGiveDA)
+		chance += bonusGiveDA / 100.0f * 500; // convert to skill value
+	int per_inc = aabonuses.DoubleAttackChance + spellbonuses.DoubleAttackChance + itembonuses.DoubleAttackChance;
+	if (per_inc)
+		chance += chance * per_inc / 100;
 
-	uint16 skill = GetSkill(SkillDoubleAttack);
+	return zone->random.Int(1, 500) <= chance;
+}
 
-	int32 bonusDA = aabonuses.DoubleAttackChance + spellbonuses.DoubleAttackChance + itembonuses.DoubleAttackChance;
+// Admittedly these parses were short, but this check worked for 3 toons across multiple levels
+// with varying triple attack skill (1-3% error at least)
+bool Client::CheckTripleAttack()
+{
+	int chance = GetSkill(SkillTripleAttack);
+	if (chance < 1)
+		return false;
 
-	//Use skill calculations otherwise, if you only have AA applied GiveDoubleAttack chance then use that value as the base.
-	if (skill)
-		chance = (float(skill+GetLevel()) * (float(100.0f+bonusDA+bonusGiveDA) /100.0f)) /500.0f;
-	else
-		chance = (float(bonusGiveDA) * (float(100.0f+bonusDA)/100.0f) ) /100.0f;
+	int per_inc = aabonuses.TripleAttackChance + spellbonuses.TripleAttackChance + itembonuses.TripleAttackChance;
+	if (per_inc)
+		chance += chance * per_inc / 100;
 
-	//Live now uses a static Triple Attack skill (lv 46 = 2% lv 60 = 20%) - We do not have this skill on EMU ATM.
-	//A reasonable forumla would then be TA = 20% * chance
-	//AA's can also give triple attack skill over cap. (ie Burst of Power) NOTE: Skill ID in spell data is 76 (Triple Attack)
-	//Kayen: Need to decide if we can implement triple attack skill before working in over the cap effect.
-	if(tripleAttack) {
-		// Only some Double Attack classes get Triple Attack [This is already checked in client_processes.cpp]
-		int32 triple_bonus = spellbonuses.TripleAttackChance + itembonuses.TripleAttackChance;
-		chance *= 0.2f; //Baseline chance is 20% of your double attack chance.
-		chance *= float(100.0f+triple_bonus)/100.0f; //Apply modifiers.
-	}
-
-	if(zone->random.Roll(chance))
-		return true;
-
-	return false;
+	return zone->random.Int(1, 1000) <= chance;
 }
 
 bool Client::CheckDoubleRangedAttack() {
@@ -3480,7 +3106,22 @@ bool Client::CheckDoubleRangedAttack() {
 	return false;
 }
 
-void Mob::CommonDamage(Mob* attacker, int32 &damage, const uint16 spell_id, const SkillUseTypes skill_used, bool &avoidable, const int8 buffslot, const bool iBuffTic) {
+bool Mob::CheckDoubleAttack()
+{
+	// Not 100% certain pets follow this or if it's just from pets not always
+	// having the same skills as most mobs
+	int chance = GetSkill(SkillDoubleAttack);
+	if (GetLevel() > 35)
+		chance += GetLevel();
+
+	int per_inc = aabonuses.DoubleAttackChance + spellbonuses.DoubleAttackChance + itembonuses.DoubleAttackChance;
+	if (per_inc)
+		chance += chance * per_inc / 100;
+
+	return zone->random.Int(1, 500) <= chance;
+}
+
+void Mob::CommonDamage(Mob* attacker, int32 &damage, const uint16 spell_id, const SkillUseTypes skill_used, bool &avoidable, const int8 buffslot, const bool iBuffTic, int special) {
 	// This method is called with skill_used=ABJURE for Damage Shield damage.
 	bool FromDamageShield = (skill_used == SkillAbjuration);
 
@@ -3527,14 +3168,6 @@ void Mob::CommonDamage(Mob* attacker, int32 &damage, const uint16 spell_id, cons
 	if(damage > 0) {
 		//if there is some damage being done and theres an attacker involved
 		if(attacker) {
-			if(spell_id == SPELL_HARM_TOUCH2 && attacker->IsClient() && attacker->CastToClient()->CheckAAEffect(aaEffectLeechTouch)){
-				int healed = damage;
-				healed = attacker->GetActSpellHealing(spell_id, healed);
-				attacker->HealDamage(healed);
-				entity_list.MessageClose(this, true, 300, MT_Emote, "%s beams a smile at %s", attacker->GetCleanName(), this->GetCleanName() );
-				attacker->CastToClient()->DisableAAEffect(aaEffectLeechTouch);
-			}
-
 			// if spell is lifetap add hp to the caster
 			if (spell_id != SPELL_UNKNOWN && IsLifetapSpell( spell_id )) {
 				int healed = damage;
@@ -3597,6 +3230,9 @@ void Mob::CommonDamage(Mob* attacker, int32 &damage, const uint16 spell_id, cons
 		//final damage has been determined.
 
 		SetHP(GetHP() - damage);
+
+		if (IsClient())
+			this->CastToClient()->SendHPUpdateMarquee();
 
 		if(HasDied()) {
 			bool IsSaved = false;
@@ -3708,11 +3344,11 @@ void Mob::CommonDamage(Mob* attacker, int32 &damage, const uint16 spell_id, cons
 
 		//send an HP update if we are hurt
 		if(GetHP() < GetMaxHP())
-			SendHPUpdate(!iBuffTic); // the OP_Damage actually updates the client in these cases, so we skill them
+			SendHPUpdate(!iBuffTic); // the OP_Damage actually updates the client in these cases, so we skip the HP update for them
 	}	//end `if damage was done`
 
 	//send damage packet...
-	if(!iBuffTic) { //buff ticks do not send damage, instead they just call SendHPUpdate(), which is done below
+	if(!iBuffTic) { //buff ticks do not send damage, instead they just call SendHPUpdate(), which is done above
 		EQApplicationPacket* outapp = new EQApplicationPacket(OP_Damage, sizeof(CombatDamage_Struct));
 		CombatDamage_Struct* a = (CombatDamage_Struct*)outapp->pBuffer;
 		a->target = GetID();
@@ -3725,6 +3361,7 @@ void Mob::CommonDamage(Mob* attacker, int32 &damage, const uint16 spell_id, cons
 		a->type = SkillDamageTypes[skill_used]; // was 0x1c
 		a->damage = damage;
 		a->spellid = spell_id;
+		a->special = special;
 		a->meleepush_xy = attacker->GetHeading() * 2.0f;
 		if (RuleB(Combat, MeleePush) && damage > 0 && !IsRooted() &&
 		    (IsClient() || zone->random.Roll(RuleI(Combat, MeleePushChance)))) {
@@ -4428,42 +4065,55 @@ bool Mob::TryFinishingBlow(Mob *defender, SkillUseTypes skillinuse)
 	return false;
 }
 
-void Mob::DoRiposte(Mob* defender) {
+void Mob::DoRiposte(Mob *defender)
+{
 	Log.Out(Logs::Detail, Logs::Combat, "Preforming a riposte");
 
 	if (!defender)
 		return;
 
 	defender->Attack(this, MainPrimary, true);
-	if (HasDied()) return;
+	if (HasDied())
+		return;
 
-	int32 DoubleRipChance = defender->aabonuses.GiveDoubleRiposte[0] +
-							defender->spellbonuses.GiveDoubleRiposte[0] +
-							defender->itembonuses.GiveDoubleRiposte[0];
+	// this effect isn't used on live? See no AAs or spells
+	int32 DoubleRipChance = defender->aabonuses.DoubleRiposte + defender->spellbonuses.DoubleRiposte +
+				defender->itembonuses.DoubleRiposte;
 
-	DoubleRipChance		 =  defender->aabonuses.DoubleRiposte +
-							defender->spellbonuses.DoubleRiposte +
-							defender->itembonuses.DoubleRiposte;
-
-	//Live AA - Double Riposte
-	if(DoubleRipChance && zone->random.Roll(DoubleRipChance)) {
-		Log.Out(Logs::Detail, Logs::Combat, "Preforming a double riposed (%d percent chance)", DoubleRipChance);
+	if (DoubleRipChance && zone->random.Roll(DoubleRipChance)) {
+		Log.Out(Logs::Detail, Logs::Combat,
+			"Preforming a double riposted from SE_DoubleRiposte (%d percent chance)", DoubleRipChance);
 		defender->Attack(this, MainPrimary, true);
-		if (HasDied()) return;
+		if (HasDied())
+			return;
 	}
 
-	//Double Riposte effect, allows for a chance to do RIPOSTE with a skill specfic special attack (ie Return Kick).
-	//Coded narrowly: Limit to one per client. Limit AA only. [1 = Skill Attack Chance, 2 = Skill]
+	DoubleRipChance = defender->aabonuses.GiveDoubleRiposte[0] + defender->spellbonuses.GiveDoubleRiposte[0] +
+			  defender->itembonuses.GiveDoubleRiposte[0];
+
+	// Live AA - Double Riposte
+	if (DoubleRipChance && zone->random.Roll(DoubleRipChance)) {
+		Log.Out(Logs::Detail, Logs::Combat,
+			"Preforming a double riposted from SE_GiveDoubleRiposte base1 == 0 (%d percent chance)",
+			DoubleRipChance);
+		defender->Attack(this, MainPrimary, true);
+		if (HasDied())
+			return;
+	}
+
+	// Double Riposte effect, allows for a chance to do RIPOSTE with a skill specific special attack (ie Return Kick).
+	// Coded narrowly: Limit to one per client. Limit AA only. [1 = Skill Attack Chance, 2 = Skill]
 
 	DoubleRipChance = defender->aabonuses.GiveDoubleRiposte[1];
 
-	if(DoubleRipChance && zone->random.Roll(DoubleRipChance)) {
-	Log.Out(Logs::Detail, Logs::Combat, "Preforming a return SPECIAL ATTACK (%d percent chance)", DoubleRipChance);
+	if (DoubleRipChance && zone->random.Roll(DoubleRipChance)) {
+		Log.Out(Logs::Detail, Logs::Combat, "Preforming a return SPECIAL ATTACK (%d percent chance)",
+			DoubleRipChance);
 
 		if (defender->GetClass() == MONK)
 			defender->MonkSpecialAttack(this, defender->aabonuses.GiveDoubleRiposte[2]);
-		else if (defender->IsClient())
-			defender->CastToClient()->DoClassAttacks(this,defender->aabonuses.GiveDoubleRiposte[2], true);
+		else if (defender->IsClient() && defender->CastToClient()->HasSkill((SkillUseTypes)defender->aabonuses.GiveDoubleRiposte[2]))
+			defender->CastToClient()->DoClassAttacks(this, defender->aabonuses.GiveDoubleRiposte[2], true);
 	}
 }
 
@@ -4655,7 +4305,7 @@ void Mob::TrySkillProc(Mob *on, uint16 skill, uint16 ReuseTime, bool Success, ui
 	if (IsClient() && aabonuses.LimitToSkill[skill]){
 
 		CanProc = true;
-		uint32 effect = 0;
+		uint32 effect_id = 0;
 		int32 base1 = 0;
 		int32 base2 = 0;
 		uint32 slot = 0;
@@ -4674,36 +4324,41 @@ void Mob::TrySkillProc(Mob *on, uint16 skill, uint16 ReuseTime, bool Success, ui
 				proc_spell_id = 0;
 				ProcMod = 0;
 
-				std::map<uint32, std::map<uint32, AA_Ability> >::const_iterator find_iter = aa_effects.find(aaid);
-				if(find_iter == aa_effects.end())
-					break;
+				for(auto &rank_info : aa_ranks) {
+					auto ability_rank = zone->GetAlternateAdvancementAbilityAndRank(rank_info.first, rank_info.second.first);
+					auto ability = ability_rank.first;
+					auto rank = ability_rank.second;
 
-				for (std::map<uint32, AA_Ability>::const_iterator iter = aa_effects[aaid].begin(); iter != aa_effects[aaid].end(); ++iter) {
-					effect = iter->second.skill_id;
-					base1 = iter->second.base1;
-					base2 = iter->second.base2;
-					slot = iter->second.slot;
-
-					if (effect == SE_SkillProc || effect == SE_SkillProcSuccess) {
-						proc_spell_id = base1;
-						ProcMod = static_cast<float>(base2);
+					if(!ability) {
+						continue;
 					}
 
-					else if (effect == SE_LimitToSkill && base1 <= HIGHEST_SKILL) {
+					for(auto &effect : rank->effects) {
+						effect_id = effect.effect_id;
+						base1 = effect.base1;
+						base2 = effect.base2;
+						slot = effect.slot;
 
-						if (CanProc && base1 == skill && IsValidSpell(proc_spell_id)) {
-							float final_chance = chance * (ProcMod / 100.0f);
+						if(effect_id == SE_SkillProc || effect_id == SE_SkillProcSuccess) {
+							proc_spell_id = base1;
+							ProcMod = static_cast<float>(base2);
+						}
+						else if(effect_id == SE_LimitToSkill && base1 <= HIGHEST_SKILL) {
 
-							if (zone->random.Roll(final_chance)) {
-								ExecWeaponProc(nullptr, proc_spell_id, on);
-								CanProc = false;
-								break;
+							if (CanProc && base1 == skill && IsValidSpell(proc_spell_id)) {
+								float final_chance = chance * (ProcMod / 100.0f);
+
+								if (zone->random.Roll(final_chance)) {
+									ExecWeaponProc(nullptr, proc_spell_id, on);
+									CanProc = false;
+									break;
+								}
 							}
 						}
-					}
-					else {
-						proc_spell_id = 0;
-						ProcMod = 0;
+						else {
+							proc_spell_id = 0;
+							ProcMod = 0;
+						}
 					}
 				}
 			}
@@ -4921,7 +4576,6 @@ void Client::SetAttackTimer()
 	attack_timer.SetAtTrigger(4000, true);
 
 	Timer *TimerToUse = nullptr;
-	const Item_Struct *PrimaryWeapon = nullptr;
 
 	for (int i = MainRange; i <= MainSecondary; i++) {
 		//pick a timer
@@ -4943,19 +4597,8 @@ void Client::SetAttackTimer()
 
 		//special offhand stuff
 		if (i == MainSecondary) {
-			//if we have a 2H weapon in our main hand, no dual
-			if (PrimaryWeapon != nullptr) {
-				if (PrimaryWeapon->ItemClass == ItemClassCommon
-						&& (PrimaryWeapon->ItemType == ItemType2HSlash
-						|| PrimaryWeapon->ItemType == ItemType2HBlunt
-						|| PrimaryWeapon->ItemType == ItemType2HPiercing)) {
-					attack_dw_timer.Disable();
-					continue;
-				}
-			}
-
 			//if we cant dual wield, skip it
-			if (!CanThisClassDualWield()) {
+			if (!CanThisClassDualWield() || HasTwoHanderEquipped()) {
 				attack_dw_timer.Disable();
 				continue;
 			}
@@ -5004,9 +4647,6 @@ void Client::SetAttackTimer()
 		if (quiver_haste > 0)
 			speed *= quiver_haste;
 		TimerToUse->SetAtTrigger(std::max(RuleI(Combat, MinHastedDelay), speed), true, true);
-
-		if (i == MainPrimary)
-			PrimaryWeapon = ItemToUse;
 	}
 }
 
@@ -5044,13 +4684,150 @@ void NPC::SetAttackTimer()
 
 		//special offhand stuff
 		if (i == MainSecondary) {
-			//NPCs get it for free at 13
-			if(GetLevel() < 13) {
+			// SPECATK_QUAD is uncheesable
+			if(!CanThisClassDualWield() || (HasTwoHanderEquipped() && !GetSpecialAbility(SPECATK_QUAD))) {
 				attack_dw_timer.Disable();
 				continue;
 			}
 		}
 
 		TimerToUse->SetAtTrigger(std::max(RuleI(Combat, MinHastedDelay), speed), true, true);
+	}
+}
+
+void Client::DoAttackRounds(Mob *target, int hand, bool IsFromSpell)
+{
+	if (!target)
+		return;
+
+	Attack(target, hand, false, false, IsFromSpell);
+
+	bool candouble = CanThisClassDoubleAttack();
+	// extra off hand non-sense, can only double with skill of 150 or above
+	// or you have any amount of GiveDoubleAttack
+	if (candouble && hand == MainSecondary)
+		candouble = GetSkill(SkillDoubleAttack) > 149 || (aabonuses.GiveDoubleAttack + spellbonuses.GiveDoubleAttack + itembonuses.GiveDoubleAttack) > 0;
+
+	if (candouble) {
+		CheckIncreaseSkill(SkillDoubleAttack, target, -10);
+		if (CheckDoubleAttack()) {
+			Attack(target, hand, false, false, IsFromSpell);
+			// you can only triple from the main hand
+			if (hand == MainPrimary && CanThisClassTripleAttack()) {
+				CheckIncreaseSkill(SkillTripleAttack, target, -10);
+				if (CheckTripleAttack())
+					Attack(target, hand, false, false, IsFromSpell);
+			}
+		}
+	}
+
+	if (hand == MainPrimary) {
+		// According to http://www.monkly-business.net/forums/showpost.php?p=312095&postcount=168 a dev told them flurry isn't dependant on triple attack
+		// the parses kind of back that up and all of my parses seemed to be 4 or 5 attacks in the round which would work out to be
+		// doubles or triples with 2 from flurries or triple with 1 or 2 flurries ... Going with the "dev quote" I guess like we've always had it
+		auto flurrychance = aabonuses.FlurryChance + spellbonuses.FlurryChance + itembonuses.FlurryChance;
+		if (flurrychance && zone->random.Roll(flurrychance)) {
+			Attack(target, hand, false, false, IsFromSpell);
+			Attack(target, hand, false, false, IsFromSpell);
+			Message_StringID(MT_NPCFlurry, YOU_FLURRY);
+		}
+		// I haven't parsed where this guy happens, but it's not part of the normal chain above so this is fine
+		auto extraattackchance = aabonuses.ExtraAttackChance + spellbonuses.ExtraAttackChance + itembonuses.ExtraAttackChance;
+		if (extraattackchance && HasTwoHanderEquipped() && zone->random.Roll(extraattackchance))
+			Attack(target, hand, false, false, IsFromSpell);
+	}
+}
+
+bool Mob::CheckDualWield()
+{
+	// Pets /might/ follow a slightly different progression
+	// although it could all be from pets having different skills than most mobs
+	int chance = GetSkill(SkillDualWield);
+	if (GetLevel() > 35)
+		chance += GetLevel();
+
+	chance += aabonuses.Ambidexterity + spellbonuses.Ambidexterity + itembonuses.Ambidexterity;
+	int per_inc = spellbonuses.DualWieldChance + aabonuses.DualWieldChance + itembonuses.DualWieldChance;
+	if (per_inc)
+		chance += chance * per_inc / 100;
+
+	return zone->random.Int(1, 375) <= chance;
+}
+
+bool Client::CheckDualWield()
+{
+	int chance = GetSkill(SkillDualWield) + GetLevel();
+
+	chance += aabonuses.Ambidexterity + spellbonuses.Ambidexterity + itembonuses.Ambidexterity;
+	int per_inc = spellbonuses.DualWieldChance + aabonuses.DualWieldChance + itembonuses.DualWieldChance;
+	if (per_inc)
+		chance += chance * per_inc / 100;
+
+	return zone->random.Int(1, 375) <= chance;
+}
+
+void Mob::DoMainHandAttackRounds(Mob *target, ExtraAttackOptions *opts, int special)
+{
+	if (!target)
+		return;
+
+	if (RuleB(Combat, UseLiveCombatRounds)) {
+		// A "quad" on live really is just a successful dual wield where both double attack
+		// The mobs that could triple lost the ability to when the triple attack skill was added in
+		Attack(target, MainPrimary, false, false, false, opts, special);
+		if (CanThisClassDoubleAttack() && CheckDoubleAttack())
+			Attack(target, MainPrimary, false, false, false, opts, special);
+		return;
+	}
+
+	if (IsNPC()) {
+		int16 n_atk = CastToNPC()->GetNumberOfAttacks();
+		if (n_atk <= 1) {
+			Attack(target, MainPrimary, false, false, false, opts, special);
+		} else {
+			for (int i = 0; i < n_atk; ++i) {
+				Attack(target, MainPrimary, false, false, false, opts, special);
+			}
+		}
+	} else {
+		Attack(target, MainPrimary, false, false, false, opts, special);
+	}
+
+	// we use this random value in three comparisons with different
+	// thresholds, and if its truely random, then this should work
+	// out reasonably and will save us compute resources.
+	int32 RandRoll = zone->random.Int(0, 99);
+	if ((CanThisClassDoubleAttack() || GetSpecialAbility(SPECATK_TRIPLE) || GetSpecialAbility(SPECATK_QUAD))
+	    // check double attack, this is NOT the same rules that clients use...
+	    &&
+	    RandRoll < (GetLevel() + NPCDualAttackModifier)) {
+		Attack(target, MainPrimary, false, false, false, opts, special);
+		// lets see if we can do a triple attack with the main hand
+		// pets are excluded from triple and quads...
+		if ((GetSpecialAbility(SPECATK_TRIPLE) || GetSpecialAbility(SPECATK_QUAD)) && !IsPet() &&
+		    RandRoll < (GetLevel() + NPCTripleAttackModifier)) {
+			Attack(target, MainPrimary, false, false, false, opts, special);
+			// now lets check the quad attack
+			if (GetSpecialAbility(SPECATK_QUAD) && RandRoll < (GetLevel() + NPCQuadAttackModifier)) {
+				Attack(target, MainPrimary, false, false, false, opts, special);
+			}
+		}
+	}
+}
+
+void Mob::DoOffHandAttackRounds(Mob *target, ExtraAttackOptions *opts, int special)
+{
+	if (!target)
+		return;
+	// Mobs will only dual wield w/ the flag or have a secondary weapon
+	// For now, SPECATK_QUAD means innate DW when Combat:UseLiveCombatRounds is true
+	if ((GetSpecialAbility(SPECATK_INNATE_DW) ||
+	     (RuleB(Combat, UseLiveCombatRounds) && GetSpecialAbility(SPECATK_QUAD))) ||
+	    GetEquipment(MaterialSecondary) != 0) {
+		if (CheckDualWield()) {
+			Attack(target, MainSecondary, false, false, false, opts, special);
+			if (CanThisClassDoubleAttack() && GetLevel() > 35 && CheckDoubleAttack())
+				Attack(target, MainSecondary, false, false, false, opts, special);
+		}
 	}
 }

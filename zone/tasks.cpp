@@ -895,6 +895,26 @@ bool TaskManager::AppropriateLevel(int TaskID, int PlayerLevel) {
 
 }
 
+int TaskManager::GetTaskMinLevel(int TaskID)
+{
+	if (Tasks[TaskID]->MinLevel)
+	{
+		return Tasks[TaskID]->MinLevel;
+	}
+		
+	return -1;
+}
+
+int TaskManager::GetTaskMaxLevel(int TaskID)
+{
+	if (Tasks[TaskID]->MaxLevel)
+	{
+		return Tasks[TaskID]->MaxLevel;
+	}
+
+	return -1;
+}
+
 void TaskManager::TaskSetSelector(Client *c, ClientTaskState *state, Mob *mob, int TaskSetID) {
 
 	unsigned int EnabledTaskIndex = 0;
@@ -1672,7 +1692,7 @@ void ClientTaskState::UpdateTasksOnExplore(Client *c, int ExploreID) {
 	return;
 }
 
-bool ClientTaskState::UpdateTasksOnDeliver(Client *c, uint32 *Items, int Cash, int NPCTypeID) {
+bool ClientTaskState::UpdateTasksOnDeliver(Client *c, std::list<ItemInst*>& Items, int Cash, int NPCTypeID) {
 
 	bool Ret = false;
 
@@ -1711,17 +1731,15 @@ bool ClientTaskState::UpdateTasksOnDeliver(Client *c, uint32 *Items, int Cash, i
 				Ret = true;
 			}
 			else {
-				for(int k=0; k<4; k++) {
-					if(Items[k]==0) continue;
+				for(auto& k : Items) {
 					switch(Task->Activity[j].GoalMethod) {
 
 						case METHODSINGLEID:
-							if(Task->Activity[j].GoalID != (int)Items[k]) continue;
+							if(Task->Activity[j].GoalID != k->GetID()) continue;
 							break;
 
 						case METHODLIST:
-							if(!taskmanager->GoalListManager.IsInList(Task->Activity[j].GoalID,
-												Items[k]))
+							if (!taskmanager->GoalListManager.IsInList(Task->Activity[j].GoalID, k->GetID()))
 								continue;
 							break;
 
@@ -1731,7 +1749,7 @@ bool ClientTaskState::UpdateTasksOnDeliver(Client *c, uint32 *Items, int Cash, i
 					}
 					// We found an active task related to this item, so increment the done count
 					Log.Out(Logs::General, Logs::Tasks, "[UPDATE] Increment on GiveItem");
-					IncrementDoneCount(c, Task, i, j, 1);
+					IncrementDoneCount(c, Task, i, j, k->GetCharges() <= 0 ? 1 : k->GetCharges());
 					Ret = true;
 				}
 			}
@@ -2948,7 +2966,7 @@ void ClientTaskState::RemoveTask(Client *c, int sequenceNumber) {
 }
 
 
-void ClientTaskState::AcceptNewTask(Client *c, int TaskID, int NPCID) {
+void ClientTaskState::AcceptNewTask(Client *c, int TaskID, int NPCID, bool enforce_level_requirement) {
 
 	if(!taskmanager || TaskID<0 || TaskID>=MAXTASKS) {
 		c->Message(13, "Task system not functioning, or TaskID %i out of range.", TaskID);
@@ -2971,6 +2989,12 @@ void ClientTaskState::AcceptNewTask(Client *c, int TaskID, int NPCID) {
 			c->Message(13, "You have already been assigned this task.");
 			return;
 		}
+	}
+
+	if (enforce_level_requirement && !taskmanager->AppropriateLevel(TaskID, c->GetLevel()))
+	{
+		c->Message(13, "You are outside the level range of this task.");
+		return;
 	}
 
 	if(!taskmanager->IsTaskRepeatable(TaskID) && IsTaskCompleted(TaskID)) return;

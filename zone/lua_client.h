@@ -166,9 +166,9 @@ public:
 	void SummonItem(uint32 item_id, int charges, uint32 aug1, uint32 aug2, uint32 aug3);
 	void SummonItem(uint32 item_id, int charges, uint32 aug1, uint32 aug2, uint32 aug3, uint32 aug4);
 	void SummonItem(uint32 item_id, int charges, uint32 aug1, uint32 aug2, uint32 aug3, uint32 aug4, uint32 aug5);
-	void SummonItem(uint32 item_id, int charges, uint32 aug1, uint32 aug2, uint32 aug3, uint32 aug4, uint32 aug5, 
+	void SummonItem(uint32 item_id, int charges, uint32 aug1, uint32 aug2, uint32 aug3, uint32 aug4, uint32 aug5,
 		bool attuned);
-	void SummonItem(uint32 item_id, int charges, uint32 aug1, uint32 aug2, uint32 aug3, uint32 aug4, uint32 aug5, 
+	void SummonItem(uint32 item_id, int charges, uint32 aug1, uint32 aug2, uint32 aug3, uint32 aug4, uint32 aug5,
 		bool attuned, int to_slot);
 	void SetStats(int type, int value);
 	void IncStats(int type, int value);
@@ -233,6 +233,8 @@ public:
 	void AddLevelBasedExp(int exp_pct);
 	void AddLevelBasedExp(int exp_pct, int max_level);
 	void IncrementAA(int aa);
+	bool GrantAlternateAdvancementAbility(int aa_id, int points);
+	bool GrantAlternateAdvancementAbility(int aa_id, int points, bool ignore_cost);
 	void MarkSingleCompassLoc(float in_x, float in_y, float in_z);
 	void MarkSingleCompassLoc(float in_x, float in_y, float in_z, int count);
 	int GetNextAvailableSpellBookSlot();
@@ -240,6 +242,7 @@ public:
 	int FindSpellBookSlotBySpellID(int spell_id);
 	void UpdateTaskActivity(int task, int activity, int count);
 	void AssignTask(int task, int npc_id);
+	void AssignTask(int task, int npc_id, bool enforce_level_requirement);
 	void FailTask(int task);
 	bool IsTaskCompleted(int task);
 	bool IsTaskActive(int task);
@@ -253,6 +256,7 @@ public:
 	int GetAggroCount();
 	uint64 GetCarriedMoney();
 	uint64 GetAllMoney();
+	uint32 GetMoney(uint8 type, uint8 subtype);
 	void OpenLFGuildWindow();
 	void Signal(uint32 id);
 	void AddAlternateCurrencyValue(uint32 currency, int amount);
@@ -260,6 +264,7 @@ public:
 	bool HasSpellScribed(int spell_id);
 	void SetAccountFlag(std::string flag, std::string val);
 	std::string GetAccountFlag(std::string flag);
+	int GetAccountAge();
 	Lua_Group GetGroup();
 	Lua_Raid GetRaid();
 	bool PutItemInInventory(int slot_id, Lua_ItemInst inst);

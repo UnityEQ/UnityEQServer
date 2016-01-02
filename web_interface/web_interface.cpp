@@ -53,7 +53,6 @@ int callback_eqemu(libwebsocket_context *context, libwebsocket *wsi, libwebsocke
 			break;
 			
 		rapidjson::Document document;
-		std::cout << (const char*)in;
 		if(document.Parse((const char*)in).HasParseError()) {
 			WriteWebCallResponseString(session, document, "Malformed JSON data", true, true);
 			break;
