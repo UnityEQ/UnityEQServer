@@ -90,6 +90,7 @@
 #include "remote_call.h"
 
 TimeoutManager timeout_manager;
+EQStreamFactory eqsf(WorldStream,9000);
 EQWebStreamFactory eqwsf(WorldStream);
 EmuTCPServer tcps;
 ClientList client_list;
@@ -117,6 +118,9 @@ void CatchSignal(int sig_num);
 int main(int argc, char** argv) {
 	RegisterExecutablePlatform(ExePlatformWorld);
 	Log.LoadLogSettingsDefaults();
+
+
+
 	set_exception_handler();
 	register_remote_call_handlers();
 
@@ -346,8 +350,13 @@ int main(int argc, char** argv) {
 		database.ClearMerchantTemp();
 	}
 	Log.Out(Logs::General, Logs::World_Server, "Loading EQ time of day..");
-	if (!zoneserver_list.worldclock.loadFile(Config->EQTimeFile.c_str()))
-		Log.Out(Logs::General, Logs::World_Server, "Unable to load %s", Config->EQTimeFile.c_str());
+	TimeOfDay_Struct eqTime;
+	time_t realtime;
+	eqTime = database.LoadTime(realtime);
+	zoneserver_list.worldclock.SetCurrentEQTimeOfDay(eqTime, realtime);
+	Timer EQTimeTimer(600000);
+	EQTimeTimer.Start(600000);
+	
 	Log.Out(Logs::General, Logs::World_Server, "Loading launcher list..");
 	launcher_list.LoadList();
 
@@ -392,6 +401,12 @@ int main(int argc, char** argv) {
 		Log.Out(Logs::General, Logs::World_Server,"        %s",errbuf);
 		return 1;
 	}
+	if (eqsf.Open()) {
+		Log.Out(Logs::General, Logs::World_Server,"Client (UDP) listener started.");
+	} else {
+		Log.Out(Logs::General, Logs::World_Server,"Failed to start client (UDP) listener (port 9000)");
+		return 1;
+	}
 
 	if (eqwsf.Open()) {
 		Log.Out(Logs::General, Logs::World_Server,"WebClient listener started.");
@@ -418,8 +433,18 @@ int main(int argc, char** argv) {
 	while(RunLoops) {
 		Timer::SetCurrentTime();
 
-	
 		//check the factory for any new incoming streams.
+		while ((eqs = eqsf.Pop())) {
+			//pull the stream out of the factory and give it to the stream identifier
+			//which will figure out what patch they are running, and set up the dynamic
+			//structures and opcodes for that patch.
+			struct in_addr	in;
+			in.s_addr = eqs->GetRemoteIP();
+			Log.Out(Logs::General, Logs::World_Server, "New connection from %s:%d", inet_ntoa(in),ntohs(eqs->GetRemotePort()));
+			stream_identifier.AddStream(eqs);	//takes the stream
+		}
+
+				//check the factory for any new incoming streams.
 		while ((eqws = eqwsf.Pop())) {
 			//pull the stream out of the factory and give it to the stream identifier
 			//which will figure out what patch they are running, and set up the dynamic
@@ -430,6 +455,8 @@ int main(int argc, char** argv) {
 			stream_identifier.AddStream(eqws);	//takes the stream
 		}
 
+
+		eqs = nullptr;
 		eqws = nullptr;
 
 		//give the stream identifier a chance to do its work....
@@ -474,6 +501,16 @@ int main(int argc, char** argv) {
 			database.PurgeExpiredInstances();
 		}
 
+		if (EQTimeTimer.Check())
+		{
+			TimeOfDay_Struct tod;
+			zoneserver_list.worldclock.GetCurrentEQTimeOfDay(time(0), &tod);
+			if (!database.SaveTime(tod.minute, tod.hour, tod.day, tod.month, tod.year))
+				Log.Out(Logs::General, Logs::World_Server, "Failed to save eqtime.");
+			else
+				Log.Out(Logs::Detail, Logs::World_Server, "EQTime successfully saved.");
+		}
+		
 		//check for timeouts in other threads
 		timeout_manager.CheckTimeouts();
 		loginserverlist.Process();
@@ -491,19 +528,16 @@ int main(int argc, char** argv) {
 		if (InterserverTimer.Check()) {
 			InterserverTimer.Start();
 			database.ping();
-			// AsyncLoadVariables(dbasync, &database);
-			ReconnectCounter++;
-			if (ReconnectCounter >= 12) { // only create thread to reconnect every 10 minutes. previously we were creating a new thread every 10 seconds
-				ReconnectCounter = 0;
-				if (loginserverlist.AllConnected() == false) {
+
+			if (loginserverlist.AllConnected() == false) {
 #ifdef _WINDOWS
-					_beginthread(AutoInitLoginServer, 0, nullptr);
+				_beginthread(AutoInitLoginServer, 0, nullptr);
 #else
-					pthread_t thread;
-					pthread_create(&thread, nullptr, &AutoInitLoginServer, nullptr);
+				pthread_t thread;
+				pthread_create(&thread, nullptr, &AutoInitLoginServer, nullptr);
 #endif
-				}
 			}
+			
 		}
 		if (numclients == 0) {
 			Sleep(50);
@@ -519,6 +553,7 @@ int main(int argc, char** argv) {
 	Log.Out(Logs::General, Logs::World_Server, "Zone (TCP) listener stopped.");
 	tcps.Close();
 	Log.Out(Logs::General, Logs::World_Server, "Client (UDP) listener stopped.");
+	eqsf.Close();
 	Log.Out(Logs::General, Logs::World_Server, "Signaling HTTP service to stop...");
 	http_server.Stop();
 	Log.CloseFileLogs();
@@ -528,8 +563,6 @@ int main(int argc, char** argv) {
 
 void CatchSignal(int sig_num) {
 	Log.Out(Logs::General, Logs::World_Server,"Caught signal %d",sig_num);
-	if(zoneserver_list.worldclock.saveFile(WorldConfig::get()->EQTimeFile.c_str())==false)
-		Log.Out(Logs::General, Logs::World_Server,"Failed to save time file.");
 	RunLoops = false;
 }
 

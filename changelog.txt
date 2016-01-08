@@ -1,5 +1,169 @@
 EQEMu Changelog (Started on Sept 24, 2003 15:50)
 -------------------------------------------------------
+== 12/29/2015 ==
+Akkadius: Implemented standardized zone controller scripts (Rule Zone, UseZoneController) Defaulted to true
+	- When a zone boots, it will spawn an invisible npc by the name of zone_controller
+	- Lua and Perl scripts can be represented with this npc as zone_controller.pl/lua
+	- This NPC's ID is ruled be define ZONE_CONTROLLER_NPC_ID 10
+	- Two EVENT's uniquely are handled with this NPC/controller (They only work with the zone_controller NPC)
+		- EVENT_SPAWN_ZONE :: All NPC spawns in the zone trigger the controller and pass the following variables:
+			$spawned_entity_id
+			$spawned_npc_id
+		- EVENT_DEATH_ZONE :: All NPC deaths in the zone trigger the controller event and pass the following variables:
+			$killer_id
+			$killer_damage
+			$killer_spell
+			$killer_skill
+			$killed_npc_id
+
+== 12/28/2015 ==
+Kinglykrab: Added GetInstanceTimer() to Perl and Lua.
+	- Added GetInstanceTimerByID(instance_id) to Perl and Lua.
+	- Note: If you do not provide an instance id in the method it defaults to instance id 0 and returns 0 for time remaining.
+	- Added UpdateZoneHeader(type, value) to Perl and Lua.
+	- Note: UpdateZoneHeader allows you to manipulate fog color, fog density, and many other zone header settings on the fly in Perl and Lua.
+	
+== 12/21/2015 ==
+Natedog: Updated item table fields and added a few missing fields for evolving items
+	-DO NOT implement Heirloom items till the inventory code is fixed to allow placing NO DROP
+		items in your shared bank. (but item field located on items table)
+	-NYI - SkillModMax: Max skill point modification from the percent mods. EX:
+		100% 2HSlashing (Max 50) - can only increase 2hslash by 50 MAX! (item field located though)
+Kinglykrab: Added GetMeleeMitigation() for NPCs and Clients in Perl and Lua.
+	- This allows you to check total item, spell, and AA melee mitigation contribution.
+	
+== 12/19/2015 ==
+Kinglykrab: Added many methods to Perl and Lua, list below:
+	- SeeInvisible()
+	- SeeInvisibleUndead()
+	- SeeHide()
+	- SeeImprovedHide()
+	- GetNimbusEffect1() - returns first nimbus effect
+	- GetNimbusEffect2() - returns second nimbus effect
+	- GetNimbusEffect3() - returns third nimbus effect
+	- IsTargetable()
+	- HasShieldEquiped()
+	- HasTwoHandBluntEquiped()
+	- HasTwoHanderEquiped()
+	- GetHerosForgeModel() - returns int32 Hero's Forge model
+	- IsEliteMaterialItem() - returns uint32 Hero's Forge Model
+	- GetBaseSize() - returns Mob's base size
+	- HasOwner()
+	- IsPet()
+	- HasPet()
+	- IsSilenced()
+	- IsAmnesiad()
+	
+== 12/16/2015 ==
+Noudess: Repaired issue with Bind Wounds on someone else.  Message was not coming out on client (hold still) and a bind wounds on someone already binding their wounds would interrupt their bind and make them stand.  Also removed some duplicate messaging.
+
+== 12/14/2015 ==
+Kinglykrab: Added IsBlind() and IsFeared() functionality to Perl and Lua.
+	- Note: Both methods are Mob methods and may be used on NPCs or PCs.
+Natedog: Added Discipline functions, UpdateInstanceTimer function, and UnmemSpellBySpellID to lua and perl
+	-Examples: http://wiki.eqemulator.org/i?M=Pastebin&Paste=BJ0ygmNM
+	
+== 12/07/2015 ==
+Uleat: Command aliases are no longer handled through the command_add() function.
+	- To add a command alias, edit the database table `command_settings` - here, you will find three columns: `command`, `access` and `aliases`
+	- Adding command aliases require that the command contain an entry in `command_settings`.`command`
+	- Only 'real' commands go inside of the command_init() function in command.cpp .. if you wish to add aliases, you must enter them into the database
+	- 'Real' commands are loaded first .. then any access/alias data is loaded and applied afterwards
+	- Duplicate aliases will be ignored .. only the first encountered occurrence will be honored - if it does not conflict with an existing command name
+	- Aliases should not contain whitespace and should be '|' (pipe) delimited
+	- The restriction on the number of aliases has been removed .. though each alias will still be limited to the access level of the parent command
+	- If you need need more name space for aliases, simply edit the `command_settings` table and increase the size of the `aliases` column
+	- The old `commands` table has been renamed to `commands_old` for reference
+	- All of the current 'standard' commands have been added to the new `command_settings` table
+	
+	- YOU WILL NEED TO VERIFY/IMPORT OLD ACCESS VALUES AS THIS CHANGE REVERTS ALL COMMAND ACCESS VALUES TO THEIR PEQDB DEFAULTS
+
+== 11/30/2015 ==
+Uleat: Changed criteria for a few bots scripts from count to null/not null in hopes of fixing special case failures
+
+== 11/22/2015 ==
+Uleat: Fix for loginserver project compile failure
+
+== 11/7/2015 ==
+Akkadius: Implemented #repopclose [distance in units] - Used for development purposes, defaults to 500 units
+	- Real case use: Large zones with 700 NPC's and you are making fast quick tweaks to nearby NPC's you can refresh just the NPC's around you instead of all in the zone
+	- This can be quite the time saver
+	- This command will depop all NPC's and only respawn the NPC's that are 500 units around you or unless you specify otherwise
+
+== 11/2/2015 ==
+Akkadius: Performance boost (exponential) - Adjusted default idle cast check timers in rules
+	- Spells:AI_IdleNoSpellMinRecast	500 (Now 6000) 6 seconds
+	- Spells:AI_IdleNoSpellMaxRecast	2000 (Now 60000) 60 seconds
+	- Database version 9089 will take care of this update automatically only if you used the default values
+	- The CPU cost of NPC's checking the entire entity list to cast beneficial spells (Heals/Buffs) becomes extremely high when higher NPC count zones exist (Based off of process profiling)
+			- Distance checks for every single NPC to every single other NPC who are casting beneficial spells occur every .5 - 2 seconds unless npc_spells dictates other values, which most of the time it does not
+	- Zones that once fluctuated from 1-8% CPU with no activity (Idle but players present) now idle at .5% based on my testings due 
+		to this change in conjunction with the past few performance commits, these are zones that have 600-800 NPC's in them
+	- These values normally are overidden by the spells table (npc_spells), fields (idle_no_sp_recast_min, idle_no_sp_recast_max)
+
+== 11/1/2015 ==
+Akkadius: Made many performance optimizing oriented code changes in the source
+	- Added Rate limit the rate in which signals are processed for NPC's (.5 seconds instead of .01 seconds)
+Akkadius: Added Perl Export Settings which should heavily reduce the Perl footprint
+	- Normally when any sub EVENT_ gets triggered, all kinds of variables have to get exported every single time an event is triggered and 
+		this can make Perl very slow when events are triggered constantly
+			- The two most taxing variable exports are the item variables ($itemcount{} $hasitem{} $oncursor{}) and qglobals ($qglobals{})
+			- qglobals can pose to be an issue quickly when global qglobals build up, it is highly recommend to use the GetGlobal() and SetGlobal()
+				methods instead as they don't reference the hashmap $qglobals{} that is rebuilt every single time a sub event is triggered
+	- A stress test conducted with 10,000 samples shows an excess of time taken to export variables: http://i.imgur.com/NEpW1tS.png
+	- After the Perl Export Settings table is implemented, and all exports are shut off you see the following test result:
+		http://i.imgur.com/Du5hth9.png
+	- The difference of eliminating uneeded exports brings the overhead and footprint of 10,000 triggers from 54 seconds to 2 seconds
+	- In a 10,000 sample test (10,000 sub event triggers), exporting item variables adds 12 seconds alone, when item variables are only needed in
+		EVENT_ITEM and EVENT_SAY a majority of the time if at all
+	- In a 10,000 sample test (10,000 sub event triggers), exporting qglobals with approximately 1,000 global qglobals in the database creates
+		about 11-20 seconds of delay on its own (Depending on hardware of course)
+	- I've written a parser that has determined which of these exports are needed in which sub routines and have turned off all of the unneeded
+		exports in sub routines that do not need them and used it to create the default table that will be installed in the database.
+	- The export table is called 'perl_event_export_settings' and it resembles the following structure and contains all current 81 EVENTS
+		- If an entry doesn't exist in this table and a new subroutine is added to the source, all exports will be on by default for that routine
+
+	+----------+-----------------------------------------+-----------------+------------+-------------+-------------+--------------+
+	| event_id | event_description                       | export_qglobals | export_mob | export_zone | export_item | export_event |
+	+----------+-----------------------------------------+-----------------+------------+-------------+-------------+--------------+
+	|        0 | EVENT_SAY                               |               1 |          1 |           1 |           1 |            1 |
+	|        1 | EVENT_ITEM                              |               1 |          1 |           1 |           0 |            1 |
+	|        2 | EVENT_DEATH                             |               1 |          1 |           1 |           0 |            1 |
+	|        3 | EVENT_SPAWN                             |               1 |          1 |           1 |           0 |            1 |
+	|        4 | EVENT_ATTACK                            |               0 |          1 |           1 |           0 |            1 |
+	|        5 | EVENT_COMBAT                            |               1 |          1 |           1 |           0 |            1 |
+	+----------+-----------------------------------------+-----------------+------------+-------------+-------------+--------------+
+	
+	- If a change is made to this table while the server is live and running, you can hot reload all zone process settings via:
+		#reloadperlexportsettings
+	- For those who wonder what "exports" are, they are reference to variables that are made available at runtime of the sub event, such as:
+		(export_qglobals) (Heavy) : $qglobals https://github.com/EQEmu/Server/blob/master/zone/embparser.cpp#L916
+		(export_item) (Heavy) : $itemcount{} $hasitem{} $oncursor{} https://github.com/EQEmu/Server/blob/master/zone/embparser.cpp#L1103
+		(export_zone) : $zoneid, $instanceid, $zoneln etc. https://github.com/EQEmu/Server/blob/master/zone/embparser.cpp#L1083
+		(export_mob) : $x, $y, $z, $h, $hpratio etc. https://github.com/EQEmu/Server/blob/master/zone/embparser.cpp#L1032
+		(export_event) : (event specific) IE: EVENT_SAY ($text) https://github.com/EQEmu/Server/blob/master/zone/embparser.cpp#L1141
+	
+== 10/16/2015 ==
+Uleat: Added command '#bot clearfollowdistance [ <target> | spawned | all ]' to coincide with the activation of the load/save feature for follow_distance
+
+== 10/13/2015 ==
+Uleat: Important update to 2015_09_30_bots.sql - fix for orphaned entries causing crashes during the conversion process
+Note: Please visit the thread below if you encounter issues during the conversion process
+
+== 10/12/2015 ==
+Uleat: Implemented 'bots' database versioning
+Note: See thread for more information: http://www.eqemulator.org/forums/showthread.php?t=40091
+
+Kayen: Feign death will now break when hit by casted spells, consisted with live.
+Implemented suport for AA/spell effect which provides a chance to avoid FD breaking from spells.
+
+== 10/10/2015 ==
+Kayen: Updated mechanics to be consistent with live regarding how invisible breaks when the client is the target of a spell.
+Invisible will drop whenever a client is hit with a detrimental spell, regardless of if resisted, if it does damage or AOE.
+Hide skill now also follows the same rules as above.
+Implemented support for Rogue AA - Nerves of Steel which gives a chance for hide NOT to break
+when client is hit with an AOE spell.
+
 == 09/25/2015 ==
 Uleat: Implemented 'Inventory Snapshot' feature to track online player inventories at timed intervals.
 rules:

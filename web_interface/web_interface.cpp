@@ -59,7 +59,7 @@ int callback_eqemu(libwebsocket_context *context, libwebsocket *wsi, libwebsocke
 		}
 
 		std::string method;
-		if(document.HasMember("method") && !document["method"].Empty() &&  document["method"].IsString()) {
+		if(document.HasMember("method")) {
 			method = document["method"].GetString();
 		}
 

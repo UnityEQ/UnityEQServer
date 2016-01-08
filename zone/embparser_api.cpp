@@ -2906,6 +2906,42 @@ XS(XS__DestroyInstance) {
 	XSRETURN_EMPTY;
 }
 
+XS(XS__UpdateInstanceTimer);
+XS(XS__UpdateInstanceTimer) {
+	dXSARGS;
+	if (items != 2)
+		Perl_croak(aTHX_ "Usage: UpdateInstanceTimer(instance_id, new_duration)");
+
+	uint16 instance_id = (uint16)SvUV(ST(0));
+	uint32 new_duration = (uint32)SvUV(ST(1));
+	quest_manager.UpdateInstanceTimer(instance_id, new_duration);
+
+	XSRETURN_EMPTY;
+}
+
+XS(XS__GetInstanceTimer);
+XS(XS__GetInstanceTimer) {
+	dXSARGS;
+	if (items != 0)
+		Perl_croak(aTHX_ "Usage: GetInstanceTimer()");
+	
+	uint32 timer = quest_manager.GetInstanceTimer();
+	
+	XSRETURN_UV(timer);
+}
+
+XS(XS__GetInstanceTimerByID);
+XS(XS__GetInstanceTimerByID) {
+	dXSARGS;
+	if (items != 1)
+		Perl_croak(aTHX_ "Usage: GetInstanceTimerByID(instance_id)");
+	
+	uint16 instance_id = (uint16)SvUV(ST(0));
+	uint32 timer = quest_manager.GetInstanceTimerByID(instance_id);
+	
+	XSRETURN_UV(timer);
+}
+
 XS(XS__GetInstanceID);
 XS(XS__GetInstanceID) {
 	dXSARGS;
@@ -3601,6 +3637,19 @@ XS(XS__debug)
 	XSRETURN_EMPTY;
 }
 
+XS(XS__UpdateZoneHeader);
+XS(XS__UpdateZoneHeader) {
+	dXSARGS;
+	if (items != 2)
+		Perl_croak(aTHX_ "Usage: UpdateZoneHeader(type, value)");
+	
+	std::string type = (std::string)SvPV_nolen(ST(0));
+	std::string value = (std::string)SvPV_nolen(ST(1));
+	quest_manager.UpdateZoneHeader(type, value);
+	
+	XSRETURN_EMPTY;
+}
+
 
 /*
 This is the callback perl will look for to setup the
@@ -3636,6 +3685,9 @@ EXTERN_C XS(boot_quest)
 		newXS(strcpy(buf, "ChooseRandom"), XS__ChooseRandom, file);
 		newXS(strcpy(buf, "CreateInstance"), XS__CreateInstance, file);
 		newXS(strcpy(buf, "DestroyInstance"), XS__DestroyInstance, file);
+		newXS(strcpy(buf, "UpdateInstanceTimer"), XS__UpdateInstanceTimer, file);
+		newXS(strcpy(buf, "GetInstanceTimer"), XS__GetInstanceTimer, file);
+		newXS(strcpy(buf, "GetInstanceTimerByID"), XS__GetInstanceTimerByID, file);
 		newXS(strcpy(buf, "FlagInstanceByGroupLeader"), XS__FlagInstanceByGroupLeader, file);
 		newXS(strcpy(buf, "FlagInstanceByRaidLeader"), XS__FlagInstanceByRaidLeader, file);
 		newXS(strcpy(buf, "FlyMode"), XS__FlyMode, file);
@@ -3827,6 +3879,7 @@ EXTERN_C XS(boot_quest)
 		newXS(strcpy(buf, "untraindiscs"), XS__untraindiscs, file);
 		newXS(strcpy(buf, "updatespawntimer"), XS__UpdateSpawnTimer, file);
 		newXS(strcpy(buf, "updatetaskactivity"), XS__updatetaskactivity, file);
+		newXS(strcpy(buf, "UpdateZoneHeader"), XS__UpdateZoneHeader, file);
 		newXS(strcpy(buf, "varlink"), XS__varlink, file);
 		newXS(strcpy(buf, "voicetell"), XS__voicetell, file);
 		newXS(strcpy(buf, "we"), XS__we, file);

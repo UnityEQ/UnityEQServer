@@ -75,7 +75,7 @@ extern Zone* zone;
 
 Mutex MZoneShutdown;
 
-volatile bool ZoneLoaded = false;
+volatile bool is_zone_loaded = false;
 Zone* zone = 0;
 
 bool Zone::Bootup(uint32 iZoneID, uint32 iInstanceID, bool iStaticZone) {
@@ -83,9 +83,9 @@ bool Zone::Bootup(uint32 iZoneID, uint32 iInstanceID, bool iStaticZone) {
 
 	if (iZoneID == 0 || zonename == 0)
 		return false;
-	if (zone != 0 || ZoneLoaded) {
+	if (zone != 0 || is_zone_loaded) {
 		std::cerr << "Error: Zone::Bootup call when zone already booted!" << std::endl;
-		worldserver.SetZone(0);
+		worldserver.SetZoneData(0);
 		return false;
 	}
 
@@ -98,7 +98,7 @@ bool Zone::Bootup(uint32 iZoneID, uint32 iInstanceID, bool iStaticZone) {
 	if (!zone->Init(iStaticZone)) {
 		safe_delete(zone);
 		std::cerr << "Zone->Init failed" << std::endl;
-		worldserver.SetZone(0);
+		worldserver.SetZoneData(0);
 		return false;
 	}
 	zone->zonemap = Map::LoadMapFile(zone->map_name);
@@ -132,9 +132,9 @@ bool Zone::Bootup(uint32 iZoneID, uint32 iInstanceID, bool iStaticZone) {
 		}
 	}	
 
-	ZoneLoaded = true;
+	is_zone_loaded = true;
 
-	worldserver.SetZone(iZoneID, iInstanceID);
+	worldserver.SetZoneData(iZoneID, iInstanceID);
 	if(iInstanceID != 0)
 	{
 		ServerPacket *pack = new ServerPacket(ServerOP_AdventureZoneData, sizeof(uint16));
@@ -661,12 +661,12 @@ void Zone::LoadMercSpells(){
 }
 
 bool Zone::IsLoaded() {
-	return ZoneLoaded;
+	return is_zone_loaded;
 }
 
 void Zone::Shutdown(bool quite)
 {
-	if (!ZoneLoaded)
+	if (!is_zone_loaded)
 		return;
 
 	entity_list.StopMobAI();
@@ -700,7 +700,7 @@ void Zone::Shutdown(bool quite)
 	zone->SetZoneHasCurrentTime(false);
 	if (!quite)
 		Log.Out(Logs::General, Logs::Normal, "Zone shutdown: going to sleep");
-	ZoneLoaded = false;
+	is_zone_loaded = false;
 	
 	RemoteCallSubscriptionHandler::Instance()->ClearAllConnections();
 	zone->ResetAuth();
@@ -848,7 +848,7 @@ Zone::~Zone() {
 	safe_delete(watermap);
 	safe_delete(pathing);
 	if (worldserver.Connected()) {
-		worldserver.SetZone(0);
+		worldserver.SetZoneData(0);
 	}
 	safe_delete_array(short_name);
 	safe_delete_array(long_name);
@@ -1445,6 +1445,29 @@ void Zone::ClearNPCTypeCache(int id) {
 			++iter;
 		}
 	}
+}
+
+void Zone::RepopClose(const glm::vec4& client_position, uint32 repop_distance)
+{
+
+	if (!Depop())
+		return;
+
+	LinkedListIterator<Spawn2*> iterator(spawn2_list);
+
+	iterator.Reset();
+	while (iterator.MoreElements()) {
+		iterator.RemoveCurrent();
+	}
+
+	quest_manager.ClearAllTimers();
+
+	if (!database.PopulateZoneSpawnListClose(zoneid, spawn2_list, GetInstanceVersion(), client_position, repop_distance))
+		Log.Out(Logs::General, Logs::None, "Error in Zone::Repop: database.PopulateZoneSpawnList failed");
+
+	initgrids_timer.Start();
+
+	mod_repop();
 }
 
 void Zone::Repop(uint32 delay) {

@@ -4,7 +4,7 @@
 extern SharedDatabase *db;
 
 void WriteWebCallResponseString(per_session_data_eqemu *session, rapidjson::Document &doc, std::string result, bool error, bool send_no_id) {
-	if (doc.HasMember("id") && !doc["id"].Empty() && doc["id"].IsString() || send_no_id) {
+	if (doc.HasMember("id") || send_no_id) {
 		rapidjson::StringBuffer s;
 		rapidjson::Writer<rapidjson::StringBuffer> writer(s);
 		writer.StartObject();

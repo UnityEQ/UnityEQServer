@@ -166,25 +166,34 @@ void Object::HandleAugmentation(Client* user, const AugmentItem_Struct* in_augme
 	else
 	{
 		ItemInst *old_aug = nullptr;
-		const uint32 id = auged_with->GetID();
+		bool isSolvent = auged_with->GetItem()->ItemType == ItemUseTypes::ItemTypeAugmentationSolvent;
+		if (!isSolvent && auged_with->GetItem()->ItemType != ItemUseTypes::ItemTypeAugmentationDistiller)
+		{
+			Log.Out(Logs::General, Logs::Error, "Player tried to remove an augment without a solvent or distiller.");
+			user->Message(13, "Error: Missing an augmentation solvent or distiller for removing this augment.");
+
+			return;
+		}
+
 		ItemInst *aug = tobe_auged->GetAugment(in_augment->augment_slot);
-		if(aug) {
+		if (aug) {
+			if (!isSolvent && auged_with->GetItem()->ID != aug->GetItem()->AugDistiller)
+			{
+				Log.Out(Logs::General, Logs::Error, "Player tried to safely remove an augment with the wrong distiller (item %u vs expected %u).", auged_with->GetItem()->ID, aug->GetItem()->AugDistiller);
+				user->Message(13, "Error: Wrong augmentation distiller for safely removing this augment.");
+				return;
+			}
 			std::vector<EQEmu::Any> args;
 			args.push_back(aug);
 			parse->EventItem(EVENT_UNAUGMENT_ITEM, user, tobe_auged, nullptr, "", slot, &args);
 
 			args.assign(1, tobe_auged);
-			bool destroyed = false;
-			if(id == 40408 || id == 40409 || id == 40410) {
-				destroyed = true;
-			}
-
-			args.push_back(&destroyed);
+			args.push_back(&isSolvent);
 
 			parse->EventItem(EVENT_AUGMENT_REMOVE, user, aug, nullptr, "", slot, &args);
 		}
 
-		if(id == 40408 || id == 40409 || id == 40410)
+		if (isSolvent)
 			tobe_auged->DeleteAugment(in_augment->augment_slot);
 		else
 			old_aug = tobe_auged->RemoveAugment(in_augment->augment_slot);
@@ -941,135 +950,10 @@ bool Client::TradeskillExecute(DBTradeskillRecipe_Struct *spec) {
 	float res = zone->random.Real(0, 99);
 	int aa_chance = 0;
 
-	//AA modifiers
-	//can we do this with nested switches?
-	if(spec->tradeskill == SkillAlchemy){
-		switch(GetAA(aaAlchemyMastery)){
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
+	aa_chance = spellbonuses.ReduceTradeskillFail[spec->tradeskill] + itembonuses.ReduceTradeskillFail[spec->tradeskill] + aabonuses.ReduceTradeskillFail[spec->tradeskill];
 
-	if(spec->tradeskill == SkillJewelryMaking){
-		switch(GetAA(aaJewelCraftMastery)){
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
 	const Item_Struct* item = nullptr;
-
-	if (spec->tradeskill == SkillBlacksmithing) {
-		switch(GetAA(aaBlacksmithingMastery)) {
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
-
-	if (spec->tradeskill == SkillBaking) {
-		switch(GetAA(aaBakingMastery)) {
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
-
-	if (spec->tradeskill == SkillBrewing) {
-		switch(GetAA(aaBrewingMastery)) {
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
-
-	if (spec->tradeskill == SkillFletching) {
-		switch(GetAA(aaFletchingMastery2)) {
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
-
-	if (spec->tradeskill == SkillPottery) {
-		switch(GetAA(aaPotteryMastery)) {
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
-
-	if (spec->tradeskill == SkillTailoring) {
-		switch(GetAA(aaTailoringMastery)) {
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
-
-	if (spec->tradeskill == SkillResearch) {
-		switch(GetAA(aaArcaneTongues)) {
-		case 1:
-			aa_chance = 10;
-			break;
-		case 2:
-			aa_chance = 25;
-			break;
-		case 3:
-			aa_chance = 50;
-			break;
-		}
-	}
-
+	
 	chance = mod_tradeskill_chance(chance, spec);
 
 	if (((spec->tradeskill==75) || GetGM() || (chance > res)) || zone->random.Roll(aa_chance)) {
@@ -1528,8 +1412,9 @@ bool Client::CanIncreaseTradeskill(SkillUseTypes tradeskill) {
 	uint8 Pottery	= (GetRawSkill(SkillPottery) > 200) ? 1 : 0;
 	uint8 Tailoring	= (GetRawSkill(SkillTailoring) > 200) ? 1 : 0;
 	uint8 SkillTotal = Baking + Smithing + Brewing + Fletching + Jewelry + Pottery + Tailoring; //Tradeskills above 200
-	uint32 aaLevel	= GetAA(aaNewTanaanCraftingMastery); //New Tanaan AA: Each level allows an additional tradeskill above 200 (first one is free)
-
+	//New Tanaan AA: Each level allows an additional tradeskill above 200 (first one is free)
+	uint8 aaLevel = spellbonuses.TradeSkillMastery + itembonuses.TradeSkillMastery + aabonuses.TradeSkillMastery; 
+	
 	switch (tradeskill) {
 		case SkillBaking:
 		case SkillBlacksmithing:

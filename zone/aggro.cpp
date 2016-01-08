@@ -431,10 +431,19 @@ void EntityList::AIYellForHelp(Mob* sender, Mob* attacker) {
 	if (sender->GetPrimaryFaction() == 0 )
 		return; // well, if we dont have a faction set, we're gonna be indiff to everybody
 
+	if (sender->HasAssistAggro())
+		return;
+
 	for (auto it = npc_list.begin(); it != npc_list.end(); ++it) {
 		NPC *mob = it->second;
 		if (!mob)
 			continue;
+
+		if (mob->CheckAggro(attacker))
+			continue;
+
+		if (sender->NPCAssistCap() >= RuleI(Combat, NPCAssistCap))
+			break;
 
 		float r = mob->GetAssistRange();
 		r = r * r;
@@ -476,7 +485,8 @@ void EntityList::AIYellForHelp(Mob* sender, Mob* attacker) {
 							attacker->GetName(), DistanceSquared(mob->GetPosition(),
 							sender->GetPosition()), fabs(sender->GetZ()+mob->GetZ()));
 #endif
-						mob->AddToHateList(attacker, 1, 0, false);
+						mob->AddToHateList(attacker, 25, 0, false);
+						sender->AddAssistCap();
 					}
 				}
 			}
@@ -960,6 +970,9 @@ bool Mob::CheckLosFN(float posX, float posY, float posZ, float mobSize) {
 //offensive spell aggro
 int32 Mob::CheckAggroAmount(uint16 spell_id, Mob *target, bool isproc)
 {
+	if (NoDetrimentalSpellAggro(spell_id))
+		return 0;
+
 	int32 AggroAmount = 0;
 	int32 nonModifiedAggro = 0;
 	uint16 slevel = GetLevel();
@@ -1186,21 +1199,21 @@ int32 Mob::CheckHealAggroAmount(uint16 spell_id, Mob *target, uint32 heal_possib
 }
 
 void Mob::AddFeignMemory(Client* attacker) {
-	if(feign_memory_list.empty() && AIfeignremember_timer != nullptr)
-		AIfeignremember_timer->Start(AIfeignremember_delay);
+	if(feign_memory_list.empty() && AI_feign_remember_timer != nullptr)
+		AI_feign_remember_timer->Start(AIfeignremember_delay);
 	feign_memory_list.insert(attacker->CharacterID());
 }
 
 void Mob::RemoveFromFeignMemory(Client* attacker) {
 	feign_memory_list.erase(attacker->CharacterID());
-	if(feign_memory_list.empty() && AIfeignremember_timer != nullptr)
-		AIfeignremember_timer->Disable();
+	if(feign_memory_list.empty() && AI_feign_remember_timer != nullptr)
+		AI_feign_remember_timer->Disable();
 	if(feign_memory_list.empty())
 	{
 		minLastFightingDelayMoving = RuleI(NPC, LastFightingDelayMovingMin);
 		maxLastFightingDelayMoving = RuleI(NPC, LastFightingDelayMovingMax);
-		if(AIfeignremember_timer != nullptr)
-			AIfeignremember_timer->Disable();
+		if(AI_feign_remember_timer != nullptr)
+			AI_feign_remember_timer->Disable();
 	}
 }
 
@@ -1217,8 +1230,8 @@ void Mob::ClearFeignMemory() {
 	feign_memory_list.clear();
 	minLastFightingDelayMoving = RuleI(NPC, LastFightingDelayMovingMin);
 	maxLastFightingDelayMoving = RuleI(NPC, LastFightingDelayMovingMax);
-	if(AIfeignremember_timer != nullptr)
-		AIfeignremember_timer->Disable();
+	if(AI_feign_remember_timer != nullptr)
+		AI_feign_remember_timer->Disable();
 }
 
 bool Mob::PassCharismaCheck(Mob* caster, uint16 spell_id) {
@@ -1240,7 +1253,7 @@ bool Mob::PassCharismaCheck(Mob* caster, uint16 spell_id) {
 
 	if(IsCharmSpell(spell_id)) {
 
-		if (spells[spell_id].powerful_flag == -1) //If charm spell has this set(-1), it can not break till end of duration.
+		if (spells[spell_id].no_resist) //If charm spell has this set(-1), it can not break till end of duration.
 			return true;
 
 		//1: The mob has a default 25% chance of being allowed a resistance check against the charm.

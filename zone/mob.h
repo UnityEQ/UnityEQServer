@@ -164,7 +164,8 @@ public:
 	virtual inline bool IsBerserk() { return false; } // only clients
 	void RogueEvade(Mob *other);
 	void CommonOutgoingHitSuccess(Mob* defender, int32 &damage, SkillUseTypes skillInUse);
-	void CommonBreakInvisible();
+	void BreakInvisibleSpells();
+	void CommonBreakInvisibleFromCombat();
 	bool HasDied();
 	virtual bool CheckDualWield();
 	void DoMainHandAttackRounds(Mob *target, ExtraAttackOptions *opts = nullptr, int special = 0);
@@ -424,6 +425,8 @@ public:
 	virtual int32 CalcMaxHP();
 	inline int32 GetMaxMana() const { return max_mana; }
 	inline int32 GetMana() const { return cur_mana; }
+	virtual int32 GetEndurance() const { return 0; }
+	virtual void SetEndurance(int32 newEnd) { return; }
 	int32 GetItemHPBonuses();
 	int32 GetSpellHPBonuses();
 	virtual const int32& SetMana(int32 amount);
@@ -489,7 +492,7 @@ public:
 	inline uint32 GetLevelCon(uint8 iOtherLevel) const {
 		return this ? GetLevelCon(GetLevel(), iOtherLevel) : CON_GREEN; }
 	virtual void AddToHateList(Mob* other, uint32 hate = 0, int32 damage = 0, bool iYellForHelp = true,
-		bool bFrenzy = false, bool iBuffTic = false);
+		bool bFrenzy = false, bool iBuffTic = false, uint16 spell_id = SPELL_UNKNOWN);
 	bool RemoveFromHateList(Mob* mob);
 	void SetHateAmountOnEnt(Mob* other, int32 hate = 0, int32 damage = 0) { hate_list.SetHateAmountOnEnt(other,hate,damage);}
 	void HalveAggro(Mob *other) { uint32 in_hate = GetHateAmount(other); SetHateAmountOnEnt(other, (in_hate > 1 ? in_hate / 2 : 1)); }
@@ -501,6 +504,10 @@ public:
 	Mob* GetHateRandom() { return hate_list.GetRandomEntOnHateList();}
 	Mob* GetHateMost() { return hate_list.GetEntWithMostHateOnList();}
 	bool IsEngaged() { return(!hate_list.IsHateListEmpty()); }
+	bool HasPrimaryAggro() { return PrimaryAggro; }
+	bool HasAssistAggro() { return AssistAggro; }
+	void SetPrimaryAggro(bool value) { PrimaryAggro = value; if (value) AssistAggro = false; }
+	void SetAssistAggro(bool value) { AssistAggro = value; if (PrimaryAggro) AssistAggro = false; }
 	bool HateSummon();
 	void FaceTarget(Mob* MobToFace = 0);
 	void SetHeading(float iHeading) { if(m_Position.w != iHeading) { pLastChange = Timer::GetCurrentTime();
@@ -745,10 +752,11 @@ public:
 	inline bool GetInvul(void) { return invulnerable; }
 	inline void SetExtraHaste(int Haste) { ExtraHaste = Haste; }
 	virtual int GetHaste();
+	int32 GetMeleeMitigation();
 
 	uint8 GetWeaponDamageBonus(const Item_Struct* weapon, bool offhand = false);
 	uint16 GetDamageTable(SkillUseTypes skillinuse);
-	virtual int GetMonkHandToHandDamage(void);
+	virtual int GetHandToHandDamage(void);
 
 	bool CanThisClassDoubleAttack(void) const;
 	bool CanThisClassTripleAttack() const;
@@ -758,7 +766,7 @@ public:
 	bool CanThisClassParry(void) const;
 	bool CanThisClassBlock(void) const;
 
-	int GetMonkHandToHandDelay(void);
+	int GetHandToHandDelay(void);
 	uint32 GetClassLevelFactor();
 	void Mesmerize();
 	inline bool IsMezzed() const { return mezzed; }
@@ -922,8 +930,8 @@ public:
 	virtual FACTION_VALUE GetReverseFactionCon(Mob* iOther) { return FACTION_INDIFFERENT; }
 
 	inline bool IsTrackable() const { return(trackable); }
-	Timer* GetAIThinkTimer() { return AIthink_timer.get(); }
-	Timer* GetAIMovementTimer() { return AImovement_timer.get(); }
+	Timer* GetAIThinkTimer() { return AI_think_timer.get(); }
+	Timer* GetAIMovementTimer() { return AI_movement_timer.get(); }
 	Timer GetAttackTimer() { return attack_timer; }
 	Timer GetAttackDWTimer() { return attack_dw_timer; }
 	inline bool IsFindable() { return findable; }
@@ -989,6 +997,11 @@ public:
 	void CalcAABonuses(StatBonuses* newbon);
 	void ApplyAABonuses(const AA::Rank &rank, StatBonuses* newbon);
 	bool CheckAATimer(int timer);
+
+	int NPCAssistCap() { return npc_assist_cap; }
+	void AddAssistCap() { ++npc_assist_cap; }
+	void DelAssistCap() { --npc_assist_cap; }
+	void ResetAssistCap() { npc_assist_cap = 0; }
 
 protected:
 	void CommonDamage(Mob* other, int32 &damage, const uint16 spell_id, const SkillUseTypes attack_skill, bool &avoidable, const int8 buffslot, const bool iBuffTic, int special = 0);
@@ -1251,14 +1264,15 @@ protected:
 	uint32 maxLastFightingDelayMoving;
 	float pAggroRange;
 	float pAssistRange;
-	std::unique_ptr<Timer> AIthink_timer;
-	std::unique_ptr<Timer> AImovement_timer;
-	std::unique_ptr<Timer> AItarget_check_timer;
+	std::unique_ptr<Timer> AI_think_timer;
+	std::unique_ptr<Timer> AI_movement_timer;
+	std::unique_ptr<Timer> AI_target_check_timer;
 	bool movetimercompleted;
 	bool permarooted;
-	std::unique_ptr<Timer> AIscanarea_timer;
-	std::unique_ptr<Timer> AIwalking_timer;
-	std::unique_ptr<Timer> AIfeignremember_timer;
+	std::unique_ptr<Timer> AI_scan_area_timer;
+	std::unique_ptr<Timer> AI_walking_timer;
+	std::unique_ptr<Timer> AI_feign_remember_timer;
+	std::unique_ptr<Timer> AI_check_signal_timer;
 	uint32 pLastFightingDelayMoving;
 	HateList hate_list;
 	std::set<uint32> feign_memory_list;
@@ -1289,10 +1303,15 @@ protected:
 	glm::vec4 m_CurrentWayPoint;
 	int cur_wp_pause;
 
+	bool PrimaryAggro;
+	bool AssistAggro;
+	int npc_assist_cap;
+	Timer assist_cap_timer; // clear assist cap so more nearby mobs can be called for help
+
 
 	int patrol;
 	glm::vec3 m_FearWalkTarget;
-	bool curfp;
+	bool currently_fleeing;
 
 	// Pathing
 	//

@@ -38,9 +38,7 @@ void register_methods()
 void handle_method_token_auth(per_session_data_eqemu *session, rapidjson::Document &document, std::string &method)
 {
 	CheckParams(1, "[token]");
-	if(!document.HasMember("params") || document.HasMember("params") && document["params"].Empty() && !document["params"].IsString())
-		return;
-
+	
 	session->auth = document["params"][(rapidjson::SizeType)0].GetString();
 	if (!CheckTokenAuthorization(session)) {
 		WriteWebCallResponseBoolean(session, document, false, false);

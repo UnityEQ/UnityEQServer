@@ -1,188 +1,209 @@
--- 'load_bots' sql script file
--- current as of 10/15/2014
+-- '2015_09_30_bots' sql script file
+-- current as of 12/11/2015
 --
--- Use this file on databases where the player profile blob has been converted.
---
--- Note: This file assumes a database free of bot remnants. If you have a prior
--- bot installation and wish to reload the default schema and entries, then
--- source 'drop_bots.sql' before sourcing this file.
+-- Use eqemu_update.pl to administer this script
 
 
-ALTER TABLE `guild_members` DROP PRIMARY KEY;
-ALTER TABLE `group_id` DROP PRIMARY KEY, ADD PRIMARY KEY USING BTREE(`groupid`, `charid`, `name`, `ismerc`);
+-- Clean-up
+DROP VIEW IF EXISTS `vwbotcharactermobs`;
+DROP VIEW IF EXISTS `vwbotgroups`;
+DROP VIEW IF EXISTS `vwgroups`;
+DROP VIEW IF EXISTS `vwguildmembers`;
 
-UPDATE `spawn2` SET `enabled` = 1 WHERE `id` IN (59297,59298);
+DROP VIEW IF EXISTS `vwBotCharacterMobs`;
+DROP VIEW IF EXISTS `vwBotGroups`;
+DROP VIEW IF EXISTS `vwGroups`;
+DROP VIEW IF EXISTS `vwGuildMembers`;
 
--- old command kept for reference (`commands` now only has 2 columns - `command` and `access`)
--- INSERT INTO `commands` VALUES ('bot', '0', 'Type \"#bot help\" to the see the list of available commands for bots.');
-INSERT INTO `commands` VALUES ('bot', '0');
+DROP VIEW IF EXISTS `vw_bot_character_mobs`;
+DROP VIEW IF EXISTS `vw_bot_groups`;
+DROP VIEW IF EXISTS `vw_groups`;
+DROP VIEW IF EXISTS `vw_guild_members`;
 
-INSERT INTO `rule_values` VALUES
-	('1', 'Bots:BotAAExpansion', '8', 'The expansion through which bots will obtain AAs'),
-	('1', 'Bots:BotFinishBuffing', 'false', 'Allow for buffs to complete even if the bot caster is out of mana.  Only affects buffing out of combat.'),
-	('1', 'Bots:BotGroupBuffing', 'false', 'Bots will cast single target buffs as group buffs, default is false for single. Does not make single target buffs work for MGB.'),
-	('1', 'Bots:BotManaRegen', '3.0', 'Adjust mana regen for bots, 1 is fast and higher numbers slow it down 3 is about the same as players.'),
-	('1', 'Bots:BotQuest', 'false', 'Optional quest method to manage bot spawn limits using the quest_globals name bot_spawn_limit, see: /bazaar/Aediles_Thrall.pl'),
-	('1', 'Bots:BotSpellQuest', 'false', 'Anita Thrall\'s (Anita_Thrall.pl) Bot Spell Scriber quests.'),
-	('1', 'Bots:CreateBotCount', '150', 'Number of bots that each account can create'),
-	('1', 'Bots:SpawnBotCount', '71', 'Number of bots a character can have spawned at one time, You + 71 bots is a 12 group raid');
+DROP FUNCTION IF EXISTS `GetMobType`;
+DROP FUNCTION IF EXISTS `GetMobTypeByName`;
+DROP FUNCTION IF EXISTS `GetMobTypeByID`;
 
-CREATE TABLE `bots` (
-	`BotID` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
-	`BotOwnerCharacterID` INT(10) UNSIGNED NOT NULL,
-	`BotSpellsID` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`Name` VARCHAR(64) NOT NULL,
-	`LastName` VARCHAR(32) DEFAULT NULL,
-	`BotLevel` TINYINT(2) UNSIGNED NOT NULL DEFAULT '0',
-	`Race` SMALLINT(5) NOT NULL DEFAULT '0',
-	`Class` TINYINT(2) NOT NULL DEFAULT '0',
-	`Gender` TINYINT(2) NOT NULL DEFAULT '0',
-	`Size` FLOAT NOT NULL DEFAULT '0',
-	`Face` INT(10) NOT NULL DEFAULT '1',
-	`LuclinHairStyle` INT(10) NOT NULL DEFAULT '1',
-	`LuclinHairColor` INT(10) NOT NULL DEFAULT '1',
-	`LuclinEyeColor` INT(10) NOT NULL DEFAULT '1',
-	`LuclinEyeColor2` INT(10) NOT NULL DEFAULT '1',
-	`LuclinBeardColor` INT(10) NOT NULL DEFAULT '1',
-	`LuclinBeard` INT(10) NOT NULL DEFAULT '0',
-	`DrakkinHeritage` INT(10) NOT NULL DEFAULT '0',
-	`DrakkinTattoo` INT(10) NOT NULL DEFAULT '0',
-	`DrakkinDetails` INT(10) NOT NULL DEFAULT '0',
-	`HP` INTEGER NOT NULL DEFAULT '0',
-	`Mana` INTEGER NOT NULL DEFAULT '0',
-	`MR` SMALLINT(5) NOT NULL DEFAULT '0',
-	`CR` SMALLINT(5) NOT NULL DEFAULT '0',
-	`DR` SMALLINT(5) NOT NULL DEFAULT '0',
-	`FR` SMALLINT(5) NOT NULL DEFAULT '0',
-	`PR` SMALLINT(5) NOT NULL DEFAULT '0',
-	`Corrup` SMALLINT(5) NOT NULL DEFAULT '0',
-	`AC` SMALLINT(5) NOT NULL DEFAULT '0',
-	`STR` MEDIUMINT(8) NOT NULL DEFAULT '75',
-	`STA` MEDIUMINT(8) NOT NULL DEFAULT '75',
-	`DEX` MEDIUMINT(8) NOT NULL DEFAULT '75',
-	`AGI` MEDIUMINT(8) NOT NULL DEFAULT '75',
-	`_INT` MEDIUMINT(8) NOT NULL DEFAULT '80',
-	`WIS` MEDIUMINT(8) NOT NULL DEFAULT '75',
-	`CHA` MEDIUMINT(8) NOT NULL DEFAULT '75',
-	`ATK` MEDIUMINT(9) NOT NULL DEFAULT '0',
-	`BotCreateDate` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	`LastSpawnDate` DATETIME NOT NULL DEFAULT '0000-00-00 00:00:00',
-	`TotalPlayTime` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`LastZoneId` SMALLINT(6) NOT NULL DEFAULT '0',
-	`BotInspectMessage` VARCHAR(256) NOT NULL DEFAULT '',
-	PRIMARY KEY (`BotID`)
+DROP PROCEDURE IF EXISTS `LoadBotsSchema`;
+
+
+-- Tables
+CREATE TABLE `bot_data` (
+	`bot_id` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+	`owner_id` INT(11) UNSIGNED NOT NULL,
+	`spells_id` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`name` VARCHAR(64) NOT NULL DEFAULT '',
+	`last_name` VARCHAR(64) NOT NULL DEFAULT '',
+	`title` VARCHAR(32) NOT NULL DEFAULT '',				-- Unused
+	`suffix` VARCHAR(32) NOT NULL DEFAULT '',				-- Unused
+	`zone_id` SMALLINT(6) NOT NULL DEFAULT '0',
+	`gender` TINYINT(2) NOT NULL DEFAULT '0',
+	`race` SMALLINT(5) NOT NULL DEFAULT '0',
+	`class` TINYINT(2) NOT NULL DEFAULT '0',
+	`level` TINYINT(2) UNSIGNED NOT NULL DEFAULT '0',
+	`deity` INT(11) UNSIGNED NOT NULL DEFAULT '0',			-- Unused
+	`creation_day` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`last_spawn` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`time_spawned` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`size` FLOAT NOT NULL DEFAULT '0',
+	`face` INT(10) NOT NULL DEFAULT '1',
+	`hair_color` INT(10) NOT NULL DEFAULT '1',
+	`hair_style` INT(10) NOT NULL DEFAULT '1',
+	`beard` INT(10) NOT NULL DEFAULT '0',
+	`beard_color` INT(10) NOT NULL DEFAULT '1',
+	`eye_color_1` INT(10) NOT NULL DEFAULT '1',
+	`eye_color_2` INT(10) NOT NULL DEFAULT '1',
+	`drakkin_heritage` INT(10) NOT NULL DEFAULT '0',
+	`drakkin_tattoo` INT(10) NOT NULL DEFAULT '0',
+	`drakkin_details` INT(10) NOT NULL DEFAULT '0',
+	`ac` SMALLINT(5) NOT NULL DEFAULT '0',
+	`atk` MEDIUMINT(9) NOT NULL DEFAULT '0',
+	`hp` INTEGER NOT NULL DEFAULT '0',
+	`mana` INTEGER NOT NULL DEFAULT '0',
+	`str` MEDIUMINT(8) NOT NULL DEFAULT '75',
+	`sta` MEDIUMINT(8) NOT NULL DEFAULT '75',
+	`cha` MEDIUMINT(8) NOT NULL DEFAULT '75',
+	`dex` MEDIUMINT(8) NOT NULL DEFAULT '75',
+	`int` MEDIUMINT(8) NOT NULL DEFAULT '75',
+	`agi` MEDIUMINT(8) NOT NULL DEFAULT '75',
+	`wis` MEDIUMINT(8) NOT NULL DEFAULT '75',
+	`fire` SMALLINT(5) NOT NULL DEFAULT '0',
+	`cold` SMALLINT(5) NOT NULL DEFAULT '0',
+	`magic` SMALLINT(5) NOT NULL DEFAULT '0',
+	`poison` SMALLINT(5) NOT NULL DEFAULT '0',
+	`disease` SMALLINT(5) NOT NULL DEFAULT '0',
+	`corruption` SMALLINT(5) NOT NULL DEFAULT '0',
+	`show_helm` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`follow_distance` INT(11) UNSIGNED NOT NULL DEFAULT '200',
+	PRIMARY KEY (`bot_id`)
 ) ENGINE=InnoDB;
 
-CREATE TABLE `botstances` (
-	`BotID` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`StanceID` TINYINT UNSIGNED NOT NULL DEFAULT '0',
-	PRIMARY KEY (`BotID`),
-	CONSTRAINT `FK_botstances_1` FOREIGN KEY (`BotID`) REFERENCES `bots` (`BotID`)
+CREATE TABLE `bot_inspect_messages` (
+	`bot_id` INT(11) UNSIGNED NOT NULL,
+	`inspect_message` VARCHAR(256) NOT NULL DEFAULT '',
+	PRIMARY KEY (`bot_id`),
+	INDEX `bot_id` (`bot_id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE `bot_stances` (
+	`bot_id` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`stance_id` TINYINT UNSIGNED NOT NULL DEFAULT '0',
+	PRIMARY KEY (`bot_id`),
+	CONSTRAINT `FK_bot_stances_1` FOREIGN KEY (`bot_id`) REFERENCES `bot_data` (`bot_id`)
 );
 
-CREATE TABLE `bottimers` (
-	`BotID` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`TimerID` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`Value` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	PRIMARY KEY (`BotID`),
-	CONSTRAINT `FK_bottimers_1` FOREIGN KEY (`BotID`) REFERENCES `bots` (`BotID`)
+CREATE TABLE `bot_timers` (
+	`bot_id` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`timer_id` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`timer_value` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	PRIMARY KEY (`bot_id`),
+	CONSTRAINT `FK_bot_timers_1` FOREIGN KEY (`bot_id`) REFERENCES `bot_data` (`bot_id`)
 );
 
-CREATE TABLE `botbuffs` (
-	`BotBuffId` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
-	`BotId` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`SpellId` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`CasterLevel` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`DurationFormula` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`TicsRemaining` INT(11) UNSIGNED NOT NULL DEFAULT '0',
-	`PoisonCounters` INT(11) UNSIGNED NOT NULL DEFAULT '0',
-	`DiseaseCounters` INT(11) UNSIGNED NOT NULL DEFAULT '0',
-	`CurseCounters` INT(11) UNSIGNED NOT NULL DEFAULT '0',
-	`CorruptionCounters` INT(11) UNSIGNED NOT NULL DEFAULT '0',
-	`HitCount` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`MeleeRune` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`MagicRune` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`DeathSaveSuccessChance` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`CasterAARank` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`Persistent` TINYINT(1) NOT NULL DEFAULT '0',
-	PRIMARY KEY (`BotBuffId`),
-	KEY `FK_botbuff_1` (`BotId`),
-	CONSTRAINT `FK_botbuff_1` FOREIGN KEY (`BotId`) REFERENCES `bots` (`BotID`)
+CREATE TABLE `bot_buffs` (
+	`buffs_index` INT(11) UNSIGNED NOT NULL AUTO_INCREMENT,
+	`bot_id` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`spell_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`caster_level` TINYINT(3) UNSIGNED NOT NULL DEFAULT '0',
+	`duration_formula` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`tics_remaining` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`poison_counters` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`disease_counters` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`curse_counters` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`corruption_counters` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`numhits` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`melee_rune` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`magic_rune` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`dot_rune` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`persistent` TINYINT(1) NOT NULL DEFAULT '0',
+	`caston_x` INT(10) NOT NULL DEFAULT '0',
+	`caston_y` INT(10) NOT NULL DEFAULT '0',
+	`caston_z` INT(10) NOT NULL DEFAULT '0',
+	`extra_di_chance` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`instrument_mod` INT(10) NOT NULL DEFAULT '10',				-- Unused
+	PRIMARY KEY (`buffs_index`),
+	KEY `FK_bot_buffs_1` (`bot_id`),
+	CONSTRAINT `FK_bot_buffs_1` FOREIGN KEY (`bot_id`) REFERENCES `bot_data` (`bot_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=latin1;
 
-CREATE TABLE `botinventory` (
-	`BotInventoryID` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
-	`BotID` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	`SlotID` INTEGER SIGNED NOT NULL DEFAULT '0',
-	`ItemID` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	`charges` TINYINT(3) UNSIGNED DEFAULT 0,
-	`color` INTEGER UNSIGNED NOT NULL DEFAULT 0,
-	`augslot1` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT 0,
-	`augslot2` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT 0,
-	`augslot3` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT 0,
-	`augslot4` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT 0,
-	`augslot5` MEDIUMINT(7) UNSIGNED DEFAULT 0,
-	`instnodrop` TINYINT(1) UNSIGNED NOT NULL DEFAULT 0,
-	PRIMARY KEY (`BotInventoryID`),
-	KEY `FK_botinventory_1` (`BotID`),
-	CONSTRAINT `FK_botinventory_1` FOREIGN KEY (`BotID`) REFERENCES `bots` (`BotID`)
-) ENGINE=InnoDB; 
-
-CREATE TABLE `botpets` (
-	`BotPetsId` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
-	`PetId` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	`BotId` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	`Name` VARCHAR(64) NULL,
-	`Mana` INTEGER NOT NULL DEFAULT '0',
-	`HitPoints` INTEGER NOT NULL DEFAULT '0',
-	PRIMARY KEY (`BotPetsId`),
-	KEY `FK_botpets_1` (`BotId`),
-	CONSTRAINT `FK_botpets_1` FOREIGN KEY (`BotId`) REFERENCES `bots` (`BotID`),
-	CONSTRAINT `U_botpets_1` UNIQUE (`BotId`)
-) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=latin1;
-
-CREATE TABLE `botpetbuffs` (
-	`BotPetBuffId` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
-	`BotPetsId` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`SpellId` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`CasterLevel` INT(10) UNSIGNED NOT NULL DEFAULT '0',
-	`Duration` INT(11) UNSIGNED NOT NULL DEFAULT '0',
-	PRIMARY KEY (`BotPetBuffId`),
-	KEY `FK_botpetbuffs_1` (`BotPetsId`),
-	CONSTRAINT `FK_botpetbuffs_1` FOREIGN KEY (`BotPetsId`) REFERENCES `botpets` (`BotPetsID`)
-) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=latin1;
-
-CREATE TABLE `botpetinventory` (
-	`BotPetInventoryId` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
-	`BotPetsId` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	`ItemId` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	PRIMARY KEY (`BotPetInventoryId`),
-	KEY `FK_botpetinventory_1` (`BotPetsId`),
-	CONSTRAINT `FK_botpetinventory_1` FOREIGN KEY (`BotPetsId`) REFERENCES `botpets` (`BotPetsID`)
-) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=latin1;
-
-CREATE TABLE `botgroup` (
-	`BotGroupId` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
-	`BotGroupLeaderBotId` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	`BotGroupName` VARCHAR(64) NOT NULL,
-	PRIMARY KEY  (`BotGroupId`),
-	KEY `FK_botgroup_1` (`BotGroupLeaderBotId`),
-	CONSTRAINT `FK_botgroup_1` FOREIGN KEY (`BotGroupLeaderBotId`) REFERENCES `bots` (`BotID`)
+CREATE TABLE `bot_inventories` (
+	`inventories_index` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+	`bot_id` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`slot_id` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT '0',
+	`item_id` INT(11) UNSIGNED NULL DEFAULT '0',
+	`inst_charges` TINYINT(3) UNSIGNED DEFAULT 0,
+	`inst_color` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`inst_no_drop` TINYINT(1) UNSIGNED NOT NULL DEFAULT '0',
+	`inst_custom_data` TEXT NULL,
+	`ornament_icon` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`ornament_id_file` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	`ornament_hero_model` INT(11) NOT NULL DEFAULT '0',
+	`augment_1` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT '0',
+	`augment_2` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT '0',
+	`augment_3` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT '0',
+	`augment_4` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT '0',
+	`augment_5` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT '0',
+	`augment_6` MEDIUMINT(7) UNSIGNED NOT NULL DEFAULT '0',
+	PRIMARY KEY (`inventories_index`),
+	KEY `FK_bot_inventories_1` (`bot_id`),
+	CONSTRAINT `FK_bot_inventories_1` FOREIGN KEY (`bot_id`) REFERENCES `bot_data` (`bot_id`)
 ) ENGINE=InnoDB;
 
-CREATE TABLE `botgroupmembers` (
-	`BotGroupMemberId` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
-	`BotGroupId` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	`BotId` INTEGER UNSIGNED NOT NULL DEFAULT '0',
-	PRIMARY KEY  (`BotGroupMemberId`),
-	KEY `FK_botgroupmembers_1` (`BotGroupId`),
-	CONSTRAINT `FK_botgroupmembers_1` FOREIGN KEY (`BotGroupId`) REFERENCES `botgroup` (`BotGroupId`),
-	KEY `FK_botgroupmembers_2` (`BotId`),
-	CONSTRAINT `FK_botgroupmembers_2` FOREIGN KEY (`BotId`) REFERENCES `bots` (`BotID`)
+CREATE TABLE `bot_pets` (
+	`pets_index` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+	`pet_id` INTEGER UNSIGNED NOT NULL DEFAULT '0',
+	`bot_id` INTEGER UNSIGNED NOT NULL DEFAULT '0',
+	`name` VARCHAR(64) NULL,
+	`mana` INTEGER NOT NULL DEFAULT '0',
+	`hp` INTEGER NOT NULL DEFAULT '0',
+	PRIMARY KEY (`pets_index`),
+	KEY `FK_bot_pets_1` (`bot_id`),
+	CONSTRAINT `FK_bot_pets_1` FOREIGN KEY (`bot_id`) REFERENCES `bot_data` (`bot_id`),
+	CONSTRAINT `U_bot_pets_1` UNIQUE (`bot_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=latin1;
+
+CREATE TABLE `bot_pet_buffs` (
+	`pet_buffs_index` INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+	`pets_index` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`spell_id` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`caster_level` INT(10) UNSIGNED NOT NULL DEFAULT '0',
+	`duration` INT(11) UNSIGNED NOT NULL DEFAULT '0',
+	PRIMARY KEY (`pet_buffs_index`),
+	KEY `FK_bot_pet_buffs_1` (`pets_index`),
+	CONSTRAINT `FK_bot_pet_buffs_1` FOREIGN KEY (`pets_index`) REFERENCES `bot_pets` (`pets_index`)
+) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=latin1;
+
+CREATE TABLE `bot_pet_inventories` (
+	`pet_inventories_index` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+	`pets_index` INTEGER UNSIGNED NOT NULL DEFAULT '0',
+	`item_id` INTEGER UNSIGNED NOT NULL DEFAULT '0',
+	PRIMARY KEY (`pet_inventories_index`),
+	KEY `FK_bot_pet_inventories_1` (`pets_index`),
+	CONSTRAINT `FK_bot_pet_inventories_1` FOREIGN KEY (`pets_index`) REFERENCES `bot_pets` (`pets_index`)
+) ENGINE=InnoDB AUTO_INCREMENT=0 DEFAULT CHARSET=latin1;
+
+CREATE TABLE `bot_groups` (
+	`groups_index` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+	`group_leader_id` INTEGER UNSIGNED NOT NULL DEFAULT '0',
+	`group_name` VARCHAR(64) NOT NULL,
+	PRIMARY KEY  (`groups_index`),
+	KEY `FK_bot_groups_1` (`group_leader_id`),
+	CONSTRAINT `FK_bot_groups_1` FOREIGN KEY (`group_leader_id`) REFERENCES `bot_data` (`bot_id`)
 ) ENGINE=InnoDB;
 
-CREATE TABLE `botguildmembers` (
-	`char_id` INT(11) NOT NULL DEFAULT '0',
+CREATE TABLE `bot_group_members` (
+	`group_members_index` INTEGER UNSIGNED NOT NULL AUTO_INCREMENT,
+	`groups_index` INTEGER UNSIGNED NOT NULL DEFAULT '0',
+	`bot_id` INTEGER UNSIGNED NOT NULL DEFAULT '0',
+	PRIMARY KEY  (`group_members_index`),
+	KEY `FK_bot_group_members_1` (`groups_index`),
+	CONSTRAINT `FK_bot_group_members_1` FOREIGN KEY (`groups_index`) REFERENCES `bot_groups` (`groups_index`),
+	KEY `FK_bot_group_members_2` (`bot_id`),
+	CONSTRAINT `FK_bot_group_members_2` FOREIGN KEY (`bot_id`) REFERENCES `bot_data` (`bot_id`)
+) ENGINE=InnoDB;
+
+CREATE TABLE `bot_guild_members` (
+	`bot_id` INT(11) NOT NULL DEFAULT '0',
 	`guild_id` MEDIUMINT(8) UNSIGNED NOT NULL DEFAULT '0',
 	`rank` TINYINT(3) UNSIGNED NOT NULL DEFAULT '0',
 	`tribute_enable` TINYINT(3) UNSIGNED NOT NULL DEFAULT '0',
@@ -191,30 +212,68 @@ CREATE TABLE `botguildmembers` (
 	`banker` TINYINT(3) UNSIGNED NOT NULL DEFAULT '0',
 	`public_note` TEXT NULL,
 	`alt` TINYINT(3) UNSIGNED NOT NULL DEFAULT '0',
-	PRIMARY KEY  (`char_id`)
+	PRIMARY KEY  (`bot_id`)
 ) ENGINE=InnoDB;
 
+
+-- Functions
 DELIMITER $$
 
-CREATE FUNCTION `GetMobType` (mobname VARCHAR(64)) RETURNS CHAR(1)
+-- (no code references - see `vw_groups` below)
+CREATE FUNCTION `GetMobType` (mob_name VARCHAR(64)) RETURNS CHAR(1)
 BEGIN
 	DECLARE Result CHAR(1);
 	
 	SET Result = NULL;
 	
-	IF (SELECT COUNT(*) FROM `character_data` WHERE `name` = mobname) > 0 THEN
+	IF ((SELECT COUNT(*) FROM `character_data` WHERE `name` = mob_name) > 0) THEN
 		SET Result = 'C';
-	ELSEIF (SELECT COUNT(*) FROM `bots` WHERE `Name` = mobname) > 0 THEN
+	ELSEIF ((SELECT COUNT(*) FROM `bot_data` WHERE `name` = mob_name) > 0) THEN
 		SET Result = 'B';
 	END IF;
 	
 	RETURN Result;
 END$$
 
+-- (one code reference in /common/database.cpp)
+CREATE FUNCTION `GetMobTypeById` (mob_id INTEGER UNSIGNED) RETURNS CHAR(1)
+BEGIN
+	DECLARE Result CHAR(1);
+	
+	SET Result = NULL;
+	
+	IF ((select `id` from `character_data` where `id` = mob_id) > 0) THEN
+		SET Result = 'C';
+	ELSEIF ((select `bot_id` from `bot_data` where `bot_id` = mob_id) > 0) THEN
+		SET Result = 'B';
+	END IF;
+	
+	RETURN Result;
+END$$
+
+-- (for reference only)
+-- CREATE FUNCTION `GetMobTypeByName` (mob_name VARCHAR(64)) RETURNS CHAR(1)
+-- BEGIN
+--	DECLARE Result CHAR(1);
+--	
+--	SET Result = NULL;
+--	
+--	IF (select `id` from `character_data` where `name` = mob_name) > 0 THEN
+--		SET Result = 'C';
+--	ELSEIF (select `bot_id` from `bot_data` where `name` = mob_name) > 0 THEN
+--		SET Result = 'B';
+--	END IF;
+--	
+--	RETURN Result;
+-- END $$
+
 DELIMITER ;
 
-CREATE VIEW `vwBotCharacterMobs` AS
-SELECT _utf8'C' AS mobtype,
+
+-- Views
+CREATE VIEW `vw_bot_character_mobs` AS
+SELECT
+_utf8'C' AS mob_type,
 c.`id`,
 c.`name`,
 c.`class`,
@@ -223,39 +282,42 @@ c.`last_login`,
 c.`zone_id`
 FROM `character_data` AS c
 UNION ALL
-SELECT _utf8'B' AS mobtype,
-b.`BotID` AS id,
-b.`Name` AS name,
-b.`Class` AS class,
-b.`BotLevel` AS level,
-0 AS timelaston,
-0 AS zoneid
-FROM bots AS b;
+SELECT _utf8'B' AS mob_type,
+b.`bot_id` AS id,
+b.`name`,
+b.`class`,
+b.`level`,
+b.`last_spawn` AS last_login,
+b.`zone_id`
+FROM `bot_data` AS b;
 
-CREATE VIEW `vwGroups` AS
-SELECT g.`groupid` AS groupid,
-GetMobType(g.`name`) AS mobtype,
+CREATE VIEW `vw_bot_groups` AS
+SELECT
+g.`groups_index`,
+g.`group_name`,
+g.`group_leader_id`,
+b.`name` AS group_leader_name,
+b.`owner_id`,
+c.`name` AS owner_name
+FROM `bot_groups` AS g
+JOIN `bot_data` AS b ON g.`group_leader_id` = b.`bot_id`
+JOIN `character_data` AS c ON b.`owner_id` = c.`id`
+ORDER BY b.`owner_id`, g.`group_name`;
+
+CREATE VIEW `vw_groups` AS
+SELECT
+g.`groupid` AS group_id,
+GetMobType(g.`name`) AS mob_type,
 g.`name` AS name,
-g.`charid` AS mobid,
-IFNULL(c.`level`, b.`BotLevel`) AS level
+g.`charid` AS mob_id,
+IFNULL(c.`level`, b.`level`) AS level
 FROM `group_id` AS g
 LEFT JOIN `character_data` AS c ON g.`name` = c.`name`
-LEFT JOIN `bots` AS b ON g.`name` = b.`Name`;
+LEFT JOIN `bot_data` AS b ON g.`name` = b.`name`;
 
-CREATE VIEW `vwBotGroups` AS
-SELECT g.`BotGroupId`,
-g.`BotGroupName`,
-g.`BotGroupLeaderBotId`,
-b.`Name` AS BotGroupLeaderName,
-b.`BotOwnerCharacterId`,
-c.`name` AS BotOwnerCharacterName
-FROM `botgroup` AS g
-JOIN `bots` AS b ON g.`BotGroupLeaderBotId` = b.`BotID`
-JOIN `character_data` AS c ON b.`BotOwnerCharacterID` = c.`id`
-ORDER BY b.`BotOwnerCharacterId`, g.`BotGroupName`;
-
-CREATE VIEW `vwGuildMembers` AS
-SELECT 'C' AS mobtype,
+CREATE VIEW `vw_guild_members` AS
+SELECT
+'C' AS mob_type,
 cm.`char_id`,
 cm.`guild_id`,
 cm.`rank`,
@@ -267,8 +329,9 @@ cm.`public_note`,
 cm.`alt`
 FROM `guild_members` AS cm
 UNION ALL
-SELECT 'B' AS mobtype,
-bm.`char_id`,
+SELECT
+'B' AS mob_type,
+bm.`bot_id` AS char_id,
 bm.`guild_id`,
 bm.`rank`,
 bm.`tribute_enable`,
@@ -277,4 +340,7 @@ bm.`last_tribute`,
 bm.`banker`,
 bm.`public_note`,
 bm.`alt`
-FROM `botguildmembers` AS bm;
+FROM `bot_guild_members` AS bm;
+
+
+-- End of File

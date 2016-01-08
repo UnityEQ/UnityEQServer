@@ -4103,7 +4103,7 @@ struct ItemBodyStruct
 	uint32 Races;
 	uint32 Deity;
 	int32 SkillModValue;
-	uint32 unknown5;
+	uint32 SkillModMax;
 	uint32 SkillModType;
 	uint32 BaneDmgRace;
 	uint32 BaneDmgBody;
@@ -4206,7 +4206,7 @@ struct ClickEffectStruct
 
 struct ProcEffectStruct
 {
-	uint32 effect;
+	int32 effect;
 	uint8 level2;
 	uint32 type;
 	uint8 level;
@@ -4221,7 +4221,7 @@ struct ProcEffectStruct
 
 struct WornEffectStruct //worn, focus and scroll effect
 {
-	uint32 effect;
+	int32 effect;
 	uint8 level2;
 	uint32 type;
 	uint8 level;

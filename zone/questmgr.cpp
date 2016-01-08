@@ -2041,23 +2041,23 @@ void QuestManager::popup(const char *title, const char *text, uint32 popupid, ui
 #ifdef BOTS
 
 int QuestManager::createbotcount() {
-	return RuleI(Bots, CreateBotCount);
+	return RuleI(Bots, CreationLimit);
 }
 
 int QuestManager::spawnbotcount() {
-	return RuleI(Bots, SpawnBotCount);
+	return RuleI(Bots, SpawnLimit);
 }
 
 bool QuestManager::botquest()
 {
-	return RuleB(Bots, BotQuest);
+	return RuleB(Bots, QuestableSpawnLimit);
 }
 
 bool QuestManager::createBot(const char *name, const char *lastname, uint8 level, uint16 race, uint8 botclass, uint8 gender)
 {
 	QuestManagerCurrentQuestVars();
 	std::string TempErrorMessage;
-	uint32 MaxBotCreate = RuleI(Bots, CreateBotCount);
+	uint32 MaxBotCreate = RuleI(Bots, CreationLimit);
 
 	if (initiator && initiator->IsClient())
 	{
@@ -2582,6 +2582,45 @@ void QuestManager::DestroyInstance(uint16 instance_id)
 	database.DeleteInstance(instance_id);
 }
 
+void QuestManager::UpdateInstanceTimer(uint16 instance_id, uint32 new_duration)
+{
+	std::string query = StringFormat("UPDATE instance_list SET duration = %lu, start_time = UNIX_TIMESTAMP() WHERE id = %lu",
+		(unsigned long)new_duration, (unsigned long)instance_id);
+	auto results = database.QueryDatabase(query);
+
+	if (results.Success()) {
+		auto pack = new ServerPacket(ServerOP_InstanceUpdateTime, sizeof(ServerInstanceUpdateTime_Struct));
+		ServerInstanceUpdateTime_Struct *ut = (ServerInstanceUpdateTime_Struct*)pack->pBuffer;
+		ut->instance_id = instance_id;
+		ut->new_duration = new_duration;
+		worldserver.SendPacket(pack);
+		safe_delete(pack);
+	}
+}
+
+uint32 QuestManager::GetInstanceTimer() {
+	if (zone && zone->GetInstanceID() > 0 && zone->GetInstanceTimer()) {
+		uint32 ttime = zone->GetInstanceTimer()->GetRemainingTime();
+		return ttime;
+	}
+	return 0;
+}
+
+uint32 QuestManager::GetInstanceTimerByID(uint16 instance_id) {
+	if (instance_id == 0)
+		return 0;
+	
+	std::string query = StringFormat("SELECT ((start_time + duration) - UNIX_TIMESTAMP()) AS `remaining` FROM `instance_list` WHERE `id` = %lu", (unsigned long)instance_id);
+	auto results = database.QueryDatabase(query);
+	
+	if (results.Success()) {
+		auto row = results.begin();
+		uint32 timer = atoi(row[0]);
+		return timer;
+	}
+	return 0;
+}
+
 uint16 QuestManager::GetInstanceID(const char *zone, int16 version)
 {
 	QuestManagerCurrentQuestVars();
@@ -3053,4 +3092,76 @@ std::string QuestManager::GetEncounter() const {
 	}
 
 	return "";
+}
+
+void QuestManager::UpdateZoneHeader(std::string type, std::string value) {
+	if (strcasecmp(type.c_str(), "ztype") == 0)
+		zone->newzone_data.ztype = atoi(value.c_str());
+	else if (strcasecmp(type.c_str(), "fog_red") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_red[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "fog_green") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_green[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "fog_blue") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_blue[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "fog_minclip") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_minclip[i] = atof(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "fog_maxclip") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.fog_maxclip[i] = atof(value.c_str());
+		}
+	}
+	else if (strcasecmp(type.c_str(), "gravity") == 0)
+		zone->newzone_data.gravity = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "time_type") == 0)
+		zone->newzone_data.time_type = atoi(value.c_str());
+	else if (strcasecmp(type.c_str(), "rain_chance") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.rain_chance[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "rain_duration") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.rain_duration[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "snow_chance") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.snow_chance[i] = atoi(value.c_str());
+		}
+	} else if (strcasecmp(type.c_str(), "snow_duration") == 0) {
+		for (int i = 0; i < 4; i++) {
+			zone->newzone_data.snow_duration[i] = atoi(value.c_str());
+		}
+	}
+	else if (strcasecmp(type.c_str(), "sky") == 0)
+		zone->newzone_data.sky = atoi(value.c_str());
+	else if (strcasecmp(type.c_str(), "safe_x") == 0)
+		zone->newzone_data.safe_x = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "safe_y") == 0)
+		zone->newzone_data.safe_y = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "safe_z") == 0)
+		zone->newzone_data.safe_z = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "max_z") == 0)
+		zone->newzone_data.max_z = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "underworld") == 0)
+		zone->newzone_data.underworld = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "minclip") == 0)
+		zone->newzone_data.minclip = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "maxclip") == 0)
+		zone->newzone_data.maxclip = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "fog_density") == 0)
+		zone->newzone_data.fog_density = atof(value.c_str());
+	else if (strcasecmp(type.c_str(), "suspendbuffs") == 0)
+		zone->newzone_data.SuspendBuffs = atoi(value.c_str());
+	
+	EQApplicationPacket* outapp = new EQApplicationPacket(OP_NewZone, sizeof(NewZone_Struct));
+	memcpy(outapp->pBuffer, &zone->newzone_data, outapp->size);
+	entity_list.QueueClients(0, outapp);
+	safe_delete(outapp);
 }

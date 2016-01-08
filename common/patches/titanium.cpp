@@ -77,15 +77,15 @@ namespace Titanium
 		//register our world signature.
 		pname = std::string(name) + "_world";
 		signature.ignore_eq_opcode = 0;
-		signature.first_length = sizeof(LoginInfo_Struct);
-		signature.first_eq_opcode = OP_SendLoginInfo;
+		signature.first_length = sizeof(structs::LoginInfo_Struct);
+		signature.first_eq_opcode = opcodes->EmuToEQ(OP_SendLoginInfo);
 		into.RegisterWebPatch(signature, pname.c_str(), &opcodes, &struct_strategy);
 
 		//register our zone signature.
 		pname = std::string(name) + "_zone";
-		signature.ignore_eq_opcode = OP_AckPacket;
-		signature.first_length = sizeof(ClientZoneEntry_Struct);
-		signature.first_eq_opcode = OP_ZoneEntry;
+		signature.ignore_eq_opcode = opcodes->EmuToEQ(OP_AckPacket);
+		signature.first_length = sizeof(structs::ClientZoneEntry_Struct);
+		signature.first_eq_opcode = opcodes->EmuToEQ(OP_ZoneEntry);
 		into.RegisterWebPatch(signature, pname.c_str(), &opcodes, &struct_strategy);
 
 		Log.Out(Logs::General, Logs::Netcode, "[IDENTIFY] Registered patch %s for WebStream", name);

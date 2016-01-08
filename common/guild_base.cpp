@@ -867,16 +867,16 @@ bool BaseGuildManager::QueryWithLogging(std::string query, const char *errmsg) {
 //factored out so I dont have to copy this crap.
 #ifdef BOTS
 #define GuildMemberBaseQuery \
-"SELECT c.id,c.name,c.class,c.level,c.last_login,c.zone_id," \
-" g.guild_id,g.rank,g.tribute_enable,g.total_tribute,g.last_tribute," \
-" g.banker,g.public_note,g.alt" \
-" FROM vwBotCharacterMobs AS c LEFT JOIN vwGuildMembers AS g ON c.id=g.char_id AND c.mobtype = g.mobtype "
+"SELECT c.`id`, c.`name`, c.`class`, c.`level`, c.`last_login`, c.`zone_id`," \
+" g.`guild_id`, g.`rank`, g.`tribute_enable`, g.`total_tribute`, g.`last_tribute`," \
+" g.`banker`, g.`public_note`, g.`alt`" \
+" FROM `vw_bot_character_mobs` AS c LEFT JOIN `vw_guild_members` AS g ON c.`id` = g.`char_id` AND c.`mob_type` = g.`mob_type` "
 #else
 #define GuildMemberBaseQuery \
-"SELECT c.id,c.name,c.class,c.level,c.last_login,c.zone_id," \
-" g.guild_id,g.rank,g.tribute_enable,g.total_tribute,g.last_tribute," \
-" g.banker,g.public_note,g.alt " \
-" FROM `character_data` AS c LEFT JOIN guild_members AS g ON c.id=g.char_id "
+"SELECT c.`id`, c.`name`, c.`class`, c.`level`, c.`last_login`, c.`zone_id`," \
+" g.`guild_id`, g.`rank`, g.`tribute_enable`, g.`total_tribute`, g.`last_tribute`," \
+" g.`banker`, g.`public_note`, g.`alt` " \
+" FROM `character_data` AS c LEFT JOIN `guild_members` AS g ON c.`id` = g.`char_id` "
 #endif
 static void ProcessGuildMember(MySQLRequestRow row, CharGuildInfo &into) {
 	//fields from `characer_`
@@ -969,7 +969,7 @@ bool BaseGuildManager::GetCharInfo(uint32 char_id, CharGuildInfo &into) {
 	//load up the rank info for each guild.
 	std::string query;
 #ifdef BOTS
-    query = StringFormat(GuildMemberBaseQuery " WHERE c.id=%d AND c.mobtype = 'C'", char_id);
+    query = StringFormat(GuildMemberBaseQuery " WHERE c.id=%d AND c.mob_type = 'C'", char_id);
 #else
     query = StringFormat(GuildMemberBaseQuery " WHERE c.id=%d", char_id);
 #endif

@@ -94,7 +94,6 @@ private:
 	void SetClassLanguages(PlayerProfile_Struct *pp);
 
 	ClientListEntry* cle;
-	Timer	CLE_ping_timer;
 	Timer	CLE_keepalive_timer;
 	Timer	connect;
 	bool firstlogin;

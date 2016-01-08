@@ -114,7 +114,9 @@ const char *QuestEventSubroutines[_LargestEventID] = {
 	"EVENT_RESPAWN",
 	"EVENT_DEATH_COMPLETE",
 	"EVENT_UNHANDLED_OPCODE",
-	"EVENT_TICK"
+	"EVENT_TICK",
+	"EVENT_SPAWN_ZONE",
+	"EVENT_DEATH_ZONE",
 };
 
 PerlembParser::PerlembParser() : perl(nullptr) {
@@ -183,15 +185,31 @@ int PerlembParser::EventCommon(QuestEventID event, uint32 objid, const char * da
 
 	int char_id = 0;
 	ExportCharID(package_name, char_id, npcmob, mob);
-	ExportQGlobals(isPlayerQuest, isGlobalPlayerQuest, isGlobalNPC, isItemQuest, isSpellQuest,
-		package_name, npcmob, mob, char_id);
+	
+	/* Check for QGlobal export event enable */
+	if (parse->perl_event_export_settings[event].qglobals){
+		ExportQGlobals(isPlayerQuest, isGlobalPlayerQuest, isGlobalNPC, isItemQuest, isSpellQuest, package_name, npcmob, mob, char_id);
+	}
 
-	//ExportGenericVariables();
-	ExportMobVariables(isPlayerQuest, isGlobalPlayerQuest, isGlobalNPC, isItemQuest, isSpellQuest,
-		package_name, mob, npcmob);
-	ExportZoneVariables(package_name);
-	ExportItemVariables(package_name, mob);
-	ExportEventVariables(package_name, event, objid, data, npcmob, iteminst, mob, extradata, extra_pointers);
+	/* Check for Mob export event enable */
+	if (parse->perl_event_export_settings[event].mob){
+		ExportMobVariables(isPlayerQuest, isGlobalPlayerQuest, isGlobalNPC, isItemQuest, isSpellQuest, package_name, mob, npcmob);
+	}
+
+	/* Check for Zone export event enable */
+	if (parse->perl_event_export_settings[event].zone){
+		ExportZoneVariables(package_name);
+	}
+
+	/* Check for Item export event enable */
+	if (parse->perl_event_export_settings[event].item){
+		ExportItemVariables(package_name, mob);
+	}
+
+	/* Check for Event export event enable */
+	if (parse->perl_event_export_settings[event].event_variables){
+		ExportEventVariables(package_name, event, objid, data, npcmob, iteminst, mob, extradata, extra_pointers);
+	}
 
 	if(isPlayerQuest || isGlobalPlayerQuest){
 		return SendCommands(package_name.c_str(), sub_name, 0, mob, mob, nullptr);
@@ -199,8 +217,7 @@ int PerlembParser::EventCommon(QuestEventID event, uint32 objid, const char * da
 	else if(isItemQuest) {
 		return SendCommands(package_name.c_str(), sub_name, 0, mob, mob, iteminst);
 	}
-	else if(isSpellQuest)
-	{
+	else if(isSpellQuest){
 		if(mob) {
 			return SendCommands(package_name.c_str(), sub_name, 0, mob, mob, nullptr);
 		} else {
@@ -1407,6 +1424,21 @@ void PerlembParser::ExportEventVariables(std::string &package_name, QuestEventID
 			ExportVar(package_name.c_str(), "itemid", iteminst->GetItem()->ID);
 			ExportVar(package_name.c_str(), "spell_id", iteminst->GetItem()->Click.Effect);
 			ExportVar(package_name.c_str(), "slotid", extradata);
+			break;
+		}
+		case EVENT_SPAWN_ZONE: {
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "spawned_entity_id", sep.arg[0]);
+			ExportVar(package_name.c_str(), "spawned_npc_id", sep.arg[1]);
+			break;
+		}
+		case EVENT_DEATH_ZONE: {
+			Seperator sep(data);
+			ExportVar(package_name.c_str(), "killer_id", sep.arg[0]);
+			ExportVar(package_name.c_str(), "killer_damage", sep.arg[1]);
+			ExportVar(package_name.c_str(), "killer_spell", sep.arg[2]);
+			ExportVar(package_name.c_str(), "killer_skill", sep.arg[3]);
+			ExportVar(package_name.c_str(), "killed_npc_id", sep.arg[4]);
 			break;
 		}
 

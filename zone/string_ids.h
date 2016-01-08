@@ -27,6 +27,7 @@
 #define GAIN_XP						138		//You gain experience!!
 #define GAIN_GROUPXP				139		//You gain party experience!!
 #define BOW_DOUBLE_DAMAGE			143		//Your bow shot did double dmg.
+#define YOU_ARE_BEING_BANDAGED		147		//Someone is bandaging you.
 #define FORAGE_GRUBS				150		//You have scrounged up some fishing grubs.
 #define FORAGE_WATER				151		//You have scrounged up some water.
 #define FORAGE_FOOD					152		//You have scrounged up some food.
@@ -78,6 +79,7 @@
 #define ONLY_ONE_PET				246		//You cannot have more than one pet at a time.
 #define CANNOT_CHARM_YET			248		//Your target is too high of a level for your charm spell.
 #define CANNOT_AFFECT_NPC			251		//That spell can not affect this target NPC.
+#define FD_CAST_ON					254		//You are no longer feigning death, because a spell hit you.
 #define SUSPEND_MINION_HAS_AGGRO	256		//Your pet is the focus of something's attention.
 #define NO_PET						255		//You do not have a pet.
 #define GATE_FAIL					260		//Your gate is too unstable, and collapses.
@@ -356,6 +358,7 @@
 #define STRIKETHROUGH_STRING		9078	//You strike through your opponent's defenses!
 #define SPELL_REFLECT				9082	//%1's spell has been reflected by %2.
 #define NEW_SPELLS_AVAIL			9149	//You have new spells available to you. Check the merchants near your guild master.
+#define FD_CAST_ON_NO_BREAK			9174	//The strength of your will allows you to resume feigning death.
 #define SNEAK_RESTRICT				9240	//You can not use this ability because you have not been hidden for long enough.
 #define PET_NOW_FOCUSING			9254	//Focusing on one target, Master.
 #define PET_NOT_FOCUSING			9263	//No longer focusing on one target, Master.
@@ -384,6 +387,8 @@
 #define TARGET_PLAYER_FOR_GUILD_STATUS		12260
 #define GROUP_INVITEE_NOT_FOUND		12268	//You must target a player or use /invite <name> to invite someone to your group.
 #define GROUP_INVITEE_SELF			12270	//12270 You cannot invite yourself.
+#define NO_LONGER_HIDDEN			12337   //You are no longer hidden.
+#define STOP_SNEAKING				12338	//You stop sneaking
 #define NOT_IN_CONTROL				12368	//You do not have control of yourself right now.
 #define ALREADY_CASTING				12442	//You are already casting a spell!
 #define SHIMMERS_BRIEFLY			12444	//Your %1 shimmers briefly.

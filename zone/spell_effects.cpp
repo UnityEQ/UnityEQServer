@@ -38,7 +38,7 @@
 
 
 extern Zone* zone;
-extern volatile bool ZoneLoaded;
+extern volatile bool is_zone_loaded;
 extern WorldServer worldserver;
 
 
@@ -283,9 +283,13 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 
 				//do any AAs apply to these spells?
 				if(dmg < 0) {
+					if (!PassCastRestriction(false, spells[spell_id].base2[i], true))
+						break;
 					dmg = -dmg;
 					Damage(caster, dmg, spell_id, spell.skill, false, buffslot, false);
 				} else {
+					if (!PassCastRestriction(false, spells[spell_id].base2[i], false))
+						break;
 					HealDamage(dmg, caster);
 				}
 				break;
@@ -780,7 +784,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 
 				// define spells with fixed duration
 				// charm spells with -1 in field 209 are all of fixed duration, so lets use that instead of spell_ids
-				if(spells[spell_id].powerful_flag == -1)
+				if(spells[spell_id].no_resist)
 					bBreak = true;
 
 				if (!bBreak)
@@ -864,7 +868,7 @@ bool Mob::SpellEffect(Mob* caster, uint16 spell_id, float partial, int level_ove
 					}
 
 					CalculateNewFearpoint();
-					if(curfp)
+					if(currently_fleeing)
 					{
 						break;
 					}
@@ -3429,6 +3433,8 @@ void Mob::DoBuffTic(const Buffs_Struct &buff, int slot, Mob *caster)
 
 		switch (effect) {
 		case SE_CurrentHP: {
+			if (!PassCastRestriction(false, spells[buff.spellid].base2[i], true))
+				break;
 			effect_value = CalcSpellEffectValue(buff.spellid, i, buff.casterlevel, buff.instrument_mod,
 							    caster, buff.ticsremaining);
 			// Handle client cast DOTs here.
@@ -3944,8 +3950,8 @@ void Mob::BuffFadeBySlot(int slot, bool iRecalcBonuses)
 			}
 
 			case SE_Blind:
-				if (curfp && !FindType(SE_Fear))
-					curfp = false;
+				if (currently_fleeing && !FindType(SE_Fear))
+					currently_fleeing = false;
 				break;
 
 			case SE_Fear:
@@ -3958,8 +3964,8 @@ void Mob::BuffFadeBySlot(int slot, bool iRecalcBonuses)
 							CastToClient()->AI_Stop();
 					}
 
-					if(curfp) {
-						curfp = false;
+					if(currently_fleeing) {
+						currently_fleeing = false;
 						break;
 					}
 				}
@@ -3974,7 +3980,7 @@ void Mob::BuffFadeBySlot(int slot, bool iRecalcBonuses)
 			{
 				if(RuleB(Combat, EnableFearPathing)){
 					if(flee_mode) {
-						curfp = true;
+						currently_fleeing = true;
 						CheckFlee();
 						break;
 					}
@@ -5228,6 +5234,9 @@ int16 Client::GetFocusEffect(focusType type, uint16 spell_id)
 	if (IsBardSong(spell_id) && type != focusFcBaseEffects && type != focusSpellDuration)
 		return 0;
 
+	if (spells[spell_id].not_focusable)
+		return 0;
+
 	int16 realTotal = 0;
 	int16 realTotal2 = 0;
 	int16 realTotal3 = 0;
@@ -5498,6 +5507,9 @@ int16 Client::GetFocusEffect(focusType type, uint16 spell_id)
 }
 
 int16 NPC::GetFocusEffect(focusType type, uint16 spell_id) {
+
+	if (spells[spell_id].not_focusable)
+		return 0;
 
 	int16 realTotal = 0;
 	int16 realTotal2 = 0;
@@ -6218,16 +6230,17 @@ bool Mob::PassCastRestriction(bool UseCastRestriction,  int16 value, bool IsDama
 	Range 410 - 411 : UNKOWN
 	Range 500 - 599	: Heal if HP less than a specified value
 	Range 600 - 699	: Limit to Body Type [base2 - 600 = Body]
-	Range 700		: UNKNOWN
+	Range 700		: NPC only -- from patch notes "Wizard - Arcane Fusion no longer deals damage to non-NPC targets. This should ensure that wizards who fail their Bucolic Gambit are slightly less likely to annihilate themselves."
 	Range 701		: NOT PET
 	Range 800		: UKNOWN
 	Range 818 - 819 : If Undead/If Not Undead
 	Range 820 - 822	: UKNOWN
 	Range 835 		: Unknown *not implemented
-	Range 836 -	837	: Progression Server / Live Server *not implemented
-	Range 839 		: Unknown *not implemented
+	Range 836 -	837	: Progression Server / Live Server *not fully implemented
+	Range 839 		: Progression Server and GoD released -- broken until Oct 21 2015 on live *not fully implemented
 	Range 842 - 844 : Humaniod lv MAX ((842 - 800) * 2)
 	Range 845 - 847	: UNKNOWN
+	Range 860 - 871	: Humanoid lv MAX 860 = 90, 871 = 104 *not implemented
 	Range 10000 - 11000	: Limit to Race [base2 - 10000 = Race] (*Not on live: Too useful a function to not implement)
 	THIS IS A WORK IN PROGRESS
 	*/
@@ -6381,6 +6394,11 @@ bool Mob::PassCastRestriction(bool UseCastRestriction,  int16 value, bool IsDama
 					return true;
 				break;
 
+			case 700:
+				if (IsNPC())
+					return true;
+				break;
+
 			case 701:
 				if (!IsPet())
 					return true;
@@ -6395,6 +6413,15 @@ bool Mob::PassCastRestriction(bool UseCastRestriction,  int16 value, bool IsDama
 				if (GetBodyType() != BT_Undead)
 					return true;
 				break;
+
+			case 836:
+				return true; // todo implement progression flag assume not progression for now
+
+			case 837:
+				return false; // todo implement progression flag assume not progression for now
+
+			case 839:
+				return true; // todo implement progression flag assume not progression for now, this one is a check if GoD is live
 
 			case 842:
 				if (GetBodyType() == BT_Humanoid && GetLevel() <= 84)
@@ -6699,5 +6726,88 @@ void Mob::CalcSpellPowerDistanceMod(uint16 spell_id, float range, Mob* caster)
 		mod *= 100.0f;
 
 		SetSpellPowerDistanceMod(static_cast<int>(mod));
+	}
+}
+
+void Mob::BreakInvisibleSpells()
+{
+	if(invisible) {
+		BuffFadeByEffect(SE_Invisibility);
+		BuffFadeByEffect(SE_Invisibility2);
+		invisible = false;
+	}
+	if(invisible_undead) {
+		BuffFadeByEffect(SE_InvisVsUndead);
+		BuffFadeByEffect(SE_InvisVsUndead2);
+		invisible_undead = false;
+	}
+	if(invisible_animals){
+		BuffFadeByEffect(SE_InvisVsAnimals);
+		invisible_animals = false;
+	}
+}
+
+void Client::BreakSneakWhenCastOn(Mob* caster, bool IsResisted)
+{
+	bool IsCastersTarget = false; //Chance to avoid only applies to AOE spells when not targeted.
+	if(hidden || improved_hidden){
+
+		if (caster){
+			Mob* target = nullptr;
+			target = caster->GetTarget();
+			if (target && target == this){
+				IsCastersTarget = true;
+			}
+		}
+
+		if (!IsCastersTarget){
+
+			int chance = spellbonuses.NoBreakAESneak + itembonuses.NoBreakAESneak + aabonuses.NoBreakAESneak;
+
+			if (IsResisted)
+				chance *= 2;
+
+			if(chance && (zone->random.Roll(chance)))
+				return; // Do not drop Sneak/Hide
+		}
+	
+		//TODO: The skill buttons should reset when this occurs. Not sure how to force that yet. - Kayen
+		hidden = false;
+		improved_hidden = false;
+		EQApplicationPacket* outapp = new EQApplicationPacket(OP_SpawnAppearance, sizeof(SpawnAppearance_Struct));
+		SpawnAppearance_Struct* sa_out = (SpawnAppearance_Struct*)outapp->pBuffer;
+		sa_out->spawn_id = GetID();
+		sa_out->type = 0x03;
+		sa_out->parameter = 0;
+		entity_list.QueueClients(this, outapp, false);
+		safe_delete(outapp);
+
+		Message_StringID(MT_Skills,NO_LONGER_HIDDEN);
+
+		//Sneaking alone will not be disabled from spells, only hide+sneak.
+		if (sneaking){
+			sneaking = false;
+			SendAppearancePacket(AT_Sneak, 0);
+			Message_StringID(MT_Skills,STOP_SNEAKING);
+		}
+	}
+}
+
+void Client::BreakFeignDeathWhenCastOn(bool IsResisted)
+{
+	if(GetFeigned()){
+
+		int chance = spellbonuses.FeignedCastOnChance + itembonuses.FeignedCastOnChance + aabonuses.FeignedCastOnChance;
+
+		if (IsResisted)
+			chance *= 2;
+
+		if(chance && (zone->random.Roll(chance))){
+			Message_StringID(MT_SpellFailure,FD_CAST_ON_NO_BREAK);
+			return;
+		}
+	
+		SetFeigned(false);
+		Message_StringID(MT_SpellFailure,FD_CAST_ON);
 	}
 }

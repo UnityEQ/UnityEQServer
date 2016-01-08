@@ -186,9 +186,9 @@ bool WebInterfaceConnection::Process()
 				
 
 				ZoneServer *zs = nullptr;
-				if(instance_id != -1) {
+				if(instance_id != 0) {
 					zs = zoneserver_list.FindByInstanceID(instance_id);
-				} else if (zone_id != -1) {
+				} else {
 					zs = zoneserver_list.FindByZoneID(zone_id);
 				}
 

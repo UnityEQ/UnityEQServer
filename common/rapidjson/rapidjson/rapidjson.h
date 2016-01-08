@@ -141,7 +141,7 @@ typedef unsigned SizeType;
 */
 #ifndef RAPIDJSON_ASSERT
 #include <cassert>
-#define RAPIDJSON_ASSERT(x)
+#define RAPIDJSON_ASSERT(x) assert(x)
 #endif // RAPIDJSON_ASSERT
 
 ///////////////////////////////////////////////////////////////////////////////

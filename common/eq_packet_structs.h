@@ -44,7 +44,9 @@ static const uint32 BLOCKED_BUFF_COUNT = 20;
 
 struct LoginInfo_Struct {
 /*000*/	char	login_info[64];
+/*064*/	uint8	unknown064[124];
 /*188*/	uint8	zoning;			// 01 if zoning, 00 if not
+/*189*/	uint8	unknown189[275];
 /*488*/
 };
 
@@ -149,6 +151,9 @@ struct EquipStruct
 struct CharSelectEquip
 {
 	uint32 Material;
+	uint32 Unknown1;
+	uint32 EliteMaterial;
+	uint32 HeroForgeModel;
 	uint32 Material2;
 	Color_Struct Color;
 };
@@ -167,6 +172,10 @@ struct CharacterSelectEntry_Struct
 	uint8 Gender;
 	uint8 Face;
 	CharSelectEquip	Equip[9];
+	uint8 Unknown15;			// Seen FF
+	uint8 Unknown19;			// Seen FF
+	uint32 DrakkinTattoo;
+	uint32 DrakkinDetails;
 	uint32 Deity;
 	uint32 PrimaryIDFile;
 	uint32 SecondaryIDFile;
@@ -179,8 +188,10 @@ struct CharacterSelectEntry_Struct
 	uint8 GoHome;				// Seen 0 for new char and 1 for existing
 	uint8 Tutorial;				// Seen 1 for new char or 0 for existing
 	uint32 DrakkinHeritage;
+	uint8 Unknown1;				// Seen 0
 	uint8 Enabled;				// Originally labeled as 'CharEnabled' - unknown purpose and setting
 	uint32 LastLogin;
+	uint8 Unknown2;				// Seen 0
 };
 
 struct CharacterSelect_Struct
@@ -217,37 +228,50 @@ showeq -> eqemu
 sed -e 's/_t//g' -e 's/seto_0xFF/set_to_0xFF/g'
 */
 struct Spawn_Struct {
+/*0000*/ uint8 unknown0000;
 /*0001*/ uint8	gm;					// 0=no, 1=gm
+/*0002*/ uint8	unknown0003;
 /*0003*/ uint8	aaitle;				// 0=none, 1=general, 2=archtype, 3=class
+/*0004*/ uint8	unknown0004;
 /*0005*/ uint8	anon;				// 0=normal, 1=anon, 2=roleplay
 /*0006*/ uint8	face;				// Face id for players
 /*0007*/ char	name[64];			// Player's Name
 /*0071*/ uint16	deity;				// Player's Deity
+/*0073*/ uint16 unknown0073;
 /*0075*/ float	size;				// Model size
+/*0079*/ uint32	unknown0079;
 /*0083*/ uint8	NPC;				// 0=player,1=npc,2=pc corpse,3=npc corpse,a
 /*0084*/ uint8	invis;				// Invis (0=not, 1=invis)
 /*0085*/ uint8	haircolor;			// Hair color
 /*0086*/ uint8	curHp;				// Current hp %%% wrong
 /*0087*/ uint8	max_hp;				// (name prolly wrong)takes on the value 100 for players, 100 or 110 for NPCs and 120 for PC corpses...
 /*0088*/ uint8	findable;			// 0=can't be found, 1=can be found
-/*0094*/ float deltaHeading;	// change in heading
-/*????*/ float x;				// x coord
-/*0098*/ float y;				// y coord
-/*????*/ uint8 animation;		// animation
-/*0102*/ float	z;				// z coord
-/*????*/ float deltaY;			// change in y
-/*0106*/ float deltaX;			// change in x
-/*????*/ float heading;		// heading
-/*0110*/ float deltaZ;			// change in z
+/*0089*/ uint8	unknown0089[5];
+/*0094*/ signed	deltaHeading:10;	// change in heading
+/*????*/ signed	x:19;				// x coord
+/*????*/ signed	padding0054:3;		// ***Placeholder
+/*0098*/ signed	y:19;				// y coord
+/*????*/ signed	animation:10;		// animation
+/*????*/ signed	padding0058:3;		// ***Placeholder
+/*0102*/ signed	z:19;				// z coord
+/*????*/ signed	deltaY:13;			// change in y
+/*0106*/ signed	deltaX:13;			// change in x
+/*????*/ unsigned	heading:12;		// heading
+/*????*/ signed	padding0066:7;		// ***Placeholder
+/*0110*/ signed	deltaZ:13;			// change in z
+/*????*/ signed	padding0070:19;		// ***Placeholder
 /*0114*/ uint8	eyecolor1;			// Player's left eye color
+/*0115*/ uint8	unknown0115[11];	// Was [24]
 /*0126*/ uint8	StandState;	// stand state for SoF+ 0x64 for normal animation
 /*0127*/ uint32	drakkin_heritage;	// Added for SoF
 /*0131*/ uint32	drakkin_tattoo;		// Added for SoF
 /*0135*/ uint32	drakkin_details;	// Added for SoF
 /*0139*/ uint8	showhelm;			// 0=no, 1=yes
+/*0140*/ uint8	unknown0140[4];
 /*0144*/ uint8	is_npc;				// 0=no, 1=yes
 /*0145*/ uint8	hairstyle;			// Hair style
 /*0146*/ uint8	beard;				// Beard style (not totally, sure but maybe!)
+/*0147*/ uint8	unknown0147[4];
 /*0151*/ uint8	level;				// Spawn Level
 // None = 0, Open = 1, WeaponSheathed = 2, Aggressive = 4, ForcedAggressive = 8, InstrumentEquipped = 16, Stunned = 32, PrimaryWeaponEquipped = 64, SecondaryWeaponEquipped = 128
 /*0152*/ uint32 PlayerState;           // Controls animation stuff
@@ -255,6 +279,7 @@ struct Spawn_Struct {
 /*0157*/ char	suffix[32];			// Player's suffix (of Veeshan, etc.)
 /*0189*/ uint32	petOwnerId;			// If this is a pet, the spawn id of owner
 /*0193*/ uint8	guildrank;			// 0=normal, 1=officer, 2=leader
+/*0194*/ uint8	unknown0194[3];
 /*0197*/ union
 {
 	struct
@@ -275,11 +300,14 @@ struct Spawn_Struct {
 /*0036*/ uint8	afk;			// 0=no, 1=afk
 /*0238*/ uint32	guildID;		// Current guild
 /*0242*/ char	title[32];		// Title
+/*0274*/ uint8	unknown0274;	// non-zero prefixes name with '!'
 /*0275*/ uint8	set_to_0xFF[8];	// ***Placeholder (all ff)
 /*0283*/ uint8	helm;			// Helm texture
 /*0284*/ uint32	race;			// Spawn race
+/*0288*/ uint32	unknown0288;
 /*0292*/ char	lastName[32];	// Player's Lastname
 /*0324*/ float	walkspeed;		// Speed when walking
+/*0328*/ uint8	unknown0328;
 /*0329*/ uint8	is_pet;			// 0=no, 1=yes
 /*0330*/ uint8	light;			// Spawn's lightsource %%% wrong
 /*0331*/ uint8	class_;			// Player's class
@@ -287,6 +315,7 @@ struct Spawn_Struct {
 /*0333*/ uint8	flymode;
 /*0334*/ uint8	gender;			// Gender (0=male, 1=female)
 /*0335*/ uint8	bodytype;		// Bodytype
+/*0336*/ uint8 unknown0336[3];
 union
 {
 /*0339*/ uint8 equip_chest2;	// Second place in packet for chest texture (usually 0xFF in live packets)
@@ -4693,6 +4722,22 @@ struct GuildBankItemUpdate_Struct
 /*098*/	char	Donator[64];
 /*162*/ char	WhoFor[64];
 /*226*/	uint16	Unknown226;
+};
+
+// newer clients (RoF+) send a list that contains 240 entries
+// The packets don't actually use all 64 chars in the strings, but we'll just overallocate for these
+struct GuildBankItemListEntry_Struct
+{
+	uint8 vaild;
+	uint32 permissions;
+	char whofor[64];
+	char donator[64];
+	uint32 item_id;
+	uint32 item_icon;
+	uint32 quantity;
+	uint8 allow_merge; // 1 here for non-full stacks
+	uint8 usable;
+	char item_name[64];
 };
 
 struct GuildBankClear_Struct

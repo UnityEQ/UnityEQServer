@@ -484,10 +484,17 @@ QuestInterface *QuestParserCollection::GetQIByNPCQuest(uint32 npcid, std::string
 
 	//second look for /quests/zone/npcname.ext (precedence)
 	const NPCType *npc_type = database.LoadNPCTypesData(npcid);
-	if(!npc_type) {
+	if (!npc_type && npcid != ZONE_CONTROLLER_NPC_ID) {
 		return nullptr;
 	}
-	std::string npc_name = npc_type->name;
+
+	std::string npc_name;
+	if (npcid == ZONE_CONTROLLER_NPC_ID){
+		npc_name = "zone_controller";
+	}
+	else{
+		npc_name = npc_type->name;
+	} 
 	int sz = static_cast<int>(npc_name.length());
 	for(int i = 0; i < sz; ++i) {
 		if(npc_name[i] == '`') {
@@ -1031,4 +1038,43 @@ int QuestParserCollection::DispatchEventSpell(QuestEventID evt, NPC* npc, Client
 		++iter;
 	}
     return ret;
+}
+
+void QuestParserCollection::LoadPerlEventExportSettings(PerlEventExportSettings* perl_event_export_settings) {
+	
+	Log.Out(Logs::General, Logs::Zone_Server, "Loading Perl Event Export Settings...");
+
+	/* Write Defaults First (All Enabled) */
+	for (int i = 0; i < _LargestEventID; i++){
+		perl_event_export_settings[i].qglobals = 1;
+		perl_event_export_settings[i].mob = 1;
+		perl_event_export_settings[i].zone = 1;
+		perl_event_export_settings[i].item = 1;
+		perl_event_export_settings[i].event_variables = 1;
+	}
+
+	std::string query =
+		"SELECT "
+		"event_id, "
+		"event_description, "
+		"export_qglobals, "
+		"export_mob, "
+		"export_zone, "
+		"export_item, "
+		"export_event "
+		"FROM "
+		"perl_event_export_settings "
+		"ORDER BY event_id";
+
+	int event_id = 0;
+	auto results = database.QueryDatabase(query);
+	for (auto row = results.begin(); row != results.end(); ++row) {
+		event_id = atoi(row[0]);
+		perl_event_export_settings[event_id].qglobals = atoi(row[2]);
+		perl_event_export_settings[event_id].mob = atoi(row[3]);
+		perl_event_export_settings[event_id].zone = atoi(row[4]);
+		perl_event_export_settings[event_id].item = atoi(row[5]);
+		perl_event_export_settings[event_id].event_variables = atoi(row[6]);
+	}
+
 }

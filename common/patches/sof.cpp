@@ -1640,6 +1640,8 @@ namespace SoF
 
 			for (int equip_index = 0; equip_index < _MaterialCount; equip_index++) {
 				eq_cse->Equip[equip_index].Material = emu_cse->Equip[equip_index].Material;
+				eq_cse->Equip[equip_index].Unknown1 = emu_cse->Equip[equip_index].Unknown1;
+				eq_cse->Equip[equip_index].EliteMaterial = emu_cse->Equip[equip_index].EliteMaterial;
 				eq_cse->Equip[equip_index].Color.Color = emu_cse->Equip[equip_index].Color.Color;
 			}
 
