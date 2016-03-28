@@ -72,6 +72,7 @@ extern WebInterfaceConnection WILink;
 Client::Client(EQStreamInterface* ieqs)
 :	autobootup_timeout(RuleI(World, ZoneAutobootTimeoutMS)),
 	CLE_keepalive_timer(RuleI(World, ClientKeepaliveTimeoutMS)),
+	CLE_ping_timer(10000),
 	connect(1000),
 	eqs(ieqs)
 {
@@ -138,6 +139,10 @@ void Client::SendEnterWorld(std::string name)
 	char char_name[64] = { 0 };
 	if (pZoning && database.GetLiveChar(GetAccountID(), char_name)) {
 		if(database.GetAccountIDByChar(char_name) != GetAccountID()) {
+			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+			outapp->pBuffer[0] = 0;
+			QueuePacket(outapp);
+			safe_delete(outapp);
 			eqs->Close();
 			return;
 		} else {
@@ -420,10 +425,6 @@ bool Client::HandleSendLoginInfoPacket(const EQApplicationPacket *app) {
 #ifdef IPBASED_AUTH_HACK
 	if ((cle = zoneserver_list.CheckAuth(inet_ntoa(tmpip), password)))
 #else
-	if (loginserverlist.Connected() == false && !pZoning) {
-		Log.Out(Logs::Detail, Logs::World_Server,"Error: Login server login while not connected to login server.");
-		return false;
-	}
 	if (((cle = client_list.CheckAuth(name, password)) || (cle = client_list.CheckAuth(id, password))))
 #endif
 	{
@@ -478,7 +479,11 @@ bool Client::HandleSendLoginInfoPacket(const EQApplicationPacket *app) {
 	}
 	else {
 		// TODO: Find out how to tell the client wrong username/password
-		Log.Out(Logs::Detail, Logs::World_Server,"Bad/Expired session key '%s'",name);
+		Log.Out(Logs::Detail, Logs::World_Server,"Bad/Expired login for account '%s'",name);
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 1;
+		QueuePacket(outapp);
+		safe_delete(outapp);
 		return false;
 	}
 
@@ -693,6 +698,11 @@ bool Client::HandleCharacterCreatePacket(const EQApplicationPacket *app) {
 bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) { 
 	if (GetAccountID() == 0) {
 		Log.Out(Logs::Detail, Logs::World_Server,"Enter world with no logged in account");
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 0;
+		QueuePacket(outapp);
+		safe_delete(outapp);
+
 		eqs->Close();
 		return true;
 	}
@@ -700,6 +710,12 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 	if(GetAdmin() < 0)
 	{
 		Log.Out(Logs::Detail, Logs::World_Server,"Account banned or suspended.");
+
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 0;
+		QueuePacket(outapp);
+		safe_delete(outapp);
+
 		eqs->Close();
 		return true;
 	}
@@ -716,6 +732,10 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 	charid = database.GetCharacterInfo(char_name, &tmpaccid, &zoneID, &instanceID);
 	if (charid == 0 || tmpaccid != GetAccountID()) {
 		Log.Out(Logs::Detail, Logs::World_Server,"Could not get CharInfo for '%s'",char_name);
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 0;
+		QueuePacket(outapp);
+		safe_delete(outapp);
 		eqs->Close();
 		return true;
 	}
@@ -723,6 +743,10 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 	// Make sure this account owns this character
 	if (tmpaccid != GetAccountID()) {
 		Log.Out(Logs::Detail, Logs::World_Server,"This account does not own the character named '%s'",char_name);
+		auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+		outapp->pBuffer[0] = 0;
+		QueuePacket(outapp);
+		safe_delete(outapp);
 		eqs->Close();
 		return true;
 	}
@@ -766,6 +790,10 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 			else {
 				Log.Out(Logs::Detail, Logs::World_Server, "'%s' is trying to go home before they're able...", char_name);
 				database.SetHackerFlag(GetAccountName(), char_name, "MQGoHome: player tried to go home before they were able.");
+				auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+				outapp->pBuffer[0] = 0;
+				QueuePacket(outapp);
+				safe_delete(outapp);
 				eqs->Close();
 				return true;
 			}
@@ -790,6 +818,10 @@ bool Client::HandleEnterWorldPacket(const EQApplicationPacket *app) {
 			else {
 				Log.Out(Logs::Detail, Logs::World_Server, "'%s' is trying to go to tutorial but are not allowed...", char_name);
 				database.SetHackerFlag(GetAccountName(), char_name, "MQTutorial: player tried to enter the tutorial without having tutorial enabled for this character.");
+				auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+				outapp->pBuffer[0] = 0;
+				QueuePacket(outapp);
+				safe_delete(outapp);
 				eqs->Close();
 				return true;
 			}
@@ -945,6 +977,10 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 	if (RuleB(World, GMAccountIPList) && this->GetAdmin() >= (RuleI(World, MinGMAntiHackStatus))) {
 		if(!database.CheckGMIPs(long2ip(this->GetIP()).c_str(), this->GetAccountID())) {
 			Log.Out(Logs::Detail, Logs::World_Server,"GM Account not permited from source address %s and accountid %i", long2ip(this->GetIP()).c_str(), this->GetAccountID());
+			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+			outapp->pBuffer[0] = 0;
+			QueuePacket(outapp);
+			safe_delete(outapp);
 			eqs->Close();
 		}
 	}
@@ -1001,6 +1037,11 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 		}
 		case OP_WorldComplete:
 		{
+			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+			outapp->pBuffer[0] = 0;
+			QueuePacket(outapp);
+			safe_delete(outapp);
+
 			eqs->Close();
 			return true;
 		}
@@ -1016,6 +1057,7 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 		case OP_LoginComplete:
 		case OP_ApproveWorld:
 		case OP_WorldClientReady:
+		case OP_EmuKeepAlive:
 		{
 			// Essentially we are just 'eating' these packets, indicating
 			// they are handled.
@@ -1054,6 +1096,14 @@ bool Client::Process() {
 			cle->KeepAlive();
 	}
 
+	if (CLE_ping_timer.Check()) {
+		EQApplicationPacket* app = new EQApplicationPacket(OP_EmuKeepAlive, 0);
+		QueuePacket(app);
+		safe_delete(app);
+
+	}
+
+
 	/************ Get all packets from packet manager out queue and process them ************/
 	EQApplicationPacket *app = 0;
 	while(ret && (app = (EQApplicationPacket *)eqs->PopPacket())) {
@@ -1061,7 +1111,7 @@ bool Client::Process() {
 
 		delete app;
 	}
-
+	ret = true;
 	while(ret && (app = (EQApplicationPacket *)eqs->PushPacket())) {
 
 		uint32 zone_id = -1;
@@ -1082,6 +1132,7 @@ bool Client::Process() {
 
 		WILink.SendPacket(pack);
 		safe_delete(app);
+		safe_delete(pack);
 	}
 
 	if (!eqs->CheckState(ESTABLISHED)) {
@@ -1782,40 +1833,6 @@ bool CheckCharCreateInfoTitanium(CharCreate_Struct *cc)
 	// that none are lower than the base or higher than base + stat_points
 	// NOTE: these could just be else if, but i want to see all the stats
 	// that are messed up not just the first hit
-
-	if (bTOTAL + stat_points != cTOTAL) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat points total doesn't match expected value: expecting %d got %d", bTOTAL + stat_points, cTOTAL);
-		Charerrors++;
-	}
-
-	if (cc->STR > bSTR + stat_points || cc->STR < bSTR) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat STR is out of range");
-		Charerrors++;
-	}
-	if (cc->STA > bSTA + stat_points || cc->STA < bSTA) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat STA is out of range");
-		Charerrors++;
-	}
-	if (cc->AGI > bAGI + stat_points || cc->AGI < bAGI) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat AGI is out of range");
-		Charerrors++;
-	}
-	if (cc->DEX > bDEX + stat_points || cc->DEX < bDEX) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat DEX is out of range");
-		Charerrors++;
-	}
-	if (cc->WIS > bWIS + stat_points || cc->WIS < bWIS) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat WIS is out of range");
-		Charerrors++;
-	}
-	if (cc->INT > bINT + stat_points || cc->INT < bINT) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat INT is out of range");
-		Charerrors++;
-	}
-	if (cc->CHA > bCHA + stat_points || cc->CHA < bCHA) {
-		Log.Out(Logs::Detail, Logs::World_Server,"  stat CHA is out of range");
-		Charerrors++;
-	}
 
 	/*TODO: Check for deity/class/race.. it'd be nice, but probably of any real use to hack(faction, deity based items are all I can think of)
 	I am NOT writing those tables - kathgar*/

@@ -119,17 +119,9 @@ void WorldDatabase::GetCharSelectInfo(uint32 accountID, EQApplicationPacket **ou
 
 		for (uint32 matslot = 0; matslot < _MaterialCount; matslot++) {	// Processed below
 			cse->Equip[matslot].Material = 0;
-			cse->Equip[matslot].Unknown1 = 0;
-			cse->Equip[matslot].EliteMaterial = 0;
-			cse->Equip[matslot].HeroForgeModel = 0;
 			cse->Equip[matslot].Material2 = 0;
 			cse->Equip[matslot].Color.Color = 0;
 		}						
-
-		cse->Unknown15 = 0xFF;
-		cse->Unknown19 = 0xFF;
-		cse->DrakkinTattoo = (uint32)atoi(row[17]);
-		cse->DrakkinDetails = (uint32)atoi(row[18]);
 		cse->Deity = (uint32)atoi(row[6]);
 		cse->PrimaryIDFile = 0;							// Processed Below
 		cse->SecondaryIDFile = 0;						// Processed Below
@@ -142,10 +134,8 @@ void WorldDatabase::GetCharSelectInfo(uint32 accountID, EQApplicationPacket **ou
 		cse->GoHome = 0;								// Processed Below
 		cse->Tutorial = 0;								// Processed Below
 		cse->DrakkinHeritage = (uint32)atoi(row[16]);
-		cse->Unknown1 = 0;
 		cse->Enabled = 1;
 		cse->LastLogin = (uint32)atoi(row[7]);			// RoF2 value: 1212696584
-		cse->Unknown2 = 0;
 		/* Fill End */
 
 		if (RuleB(World, EnableReturnHomeButton)) {
@@ -262,8 +252,6 @@ void WorldDatabase::GetCharSelectInfo(uint32 accountID, EQApplicationPacket **ou
 
 					// Armor Materials/Models
 					cse->Equip[matslot].Material = item->Material;
-					cse->Equip[matslot].EliteMaterial = item->EliteMaterial;
-					cse->Equip[matslot].HeroForgeModel = inst->GetOrnamentHeroModel(matslot);
 					cse->Equip[matslot].Color.Color = color;
 				}
 			}

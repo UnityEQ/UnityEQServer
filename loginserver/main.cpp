@@ -32,6 +32,7 @@
 TimeoutManager timeout_manager;
 LoginServer server;
 EQEmuLogSys Log;
+ErrorLog *server_log;
 bool run_server = true;
 
 void CatchSignal(int sig_num)
@@ -42,63 +43,106 @@ int main()
 {
 	RegisterExecutablePlatform(ExePlatformLogin);
 	set_exception_handler();
-	Log.LoadLogSettingsDefaults();
 
-	Log.log_settings[Logs::Error].log_to_console = Logs::General;
+	//Create our error log, is of format login_<number>.log
+	time_t current_time = time(nullptr);
+	std::stringstream log_name(std::stringstream::in | std::stringstream::out);
+#ifdef WIN32
+	log_name << ".\\logs\\login_" << (unsigned int)current_time << ".log";
+#else
+	log_name << "./logs/login_" << (unsigned int)current_time << ".log";
+#endif
+	server_log = new ErrorLog(log_name.str().c_str());
+	server_log->Log(log_debug, "Logging System Init.");
 
-	Log.Out(Logs::General, Logs::Login_Server, "Logging System Init.");
-
-	/* Parse out login.ini */
+	//Create our subsystem and parse the ini file.
 	server.config = new Config();
-	Log.Out(Logs::General, Logs::Login_Server, "Config System Init.");
+	server_log->Log(log_debug, "Config System Init.");
 	server.config->Parse("login.ini");
 
-	if (server.config->GetVariable("options", "unregistered_allowed").compare("FALSE") == 0)
+	//Parse unregistered allowed option.
+	if(server.config->GetVariable("options", "unregistered_allowed").compare("FALSE") == 0)
+	{
 		server.options.AllowUnregistered(false);
+	}
 
-	if (server.config->GetVariable("options", "trace").compare("TRUE") == 0)
+	//Parse trace option.
+	if(server.config->GetVariable("options", "trace").compare("TRUE") == 0)
+	{
 		server.options.Trace(true);
+	}
 
-	if (server.config->GetVariable("options", "world_trace").compare("TRUE") == 0)
+	//Parse trace option.
+	if(server.config->GetVariable("options", "world_trace").compare("TRUE") == 0)
+	{
 		server.options.WorldTrace(true);
+	}
 
-	if (server.config->GetVariable("options", "dump_packets_in").compare("TRUE") == 0)
+	//Parse packet inc dump option.
+	if(server.config->GetVariable("options", "dump_packets_in").compare("TRUE") == 0)
+	{
 		server.options.DumpInPackets(true);
+	}
 
-	if (server.config->GetVariable("options", "dump_packets_out").compare("TRUE") == 0)
+	//Parse packet out dump option.
+	if(server.config->GetVariable("options", "dump_packets_out").compare("TRUE") == 0)
+	{
 		server.options.DumpOutPackets(true);
+	}
 
+	//Parse encryption mode option.
 	std::string mode = server.config->GetVariable("security", "mode");
-	if (mode.size() > 0)
+	if(mode.size() > 0)
+	{
 		server.options.EncryptionMode(atoi(mode.c_str()));
+	}
 
-	std::string local_network = server.config->GetVariable("options", "local_network");
-	if (local_network.size() > 0)
-		server.options.LocalNetwork(local_network);
+	//Parse local network option.
+	std::string ln = server.config->GetVariable("options", "local_network");
+	if(ln.size() > 0)
+	{
+		server.options.LocalNetwork(ln);
+	}
 
-	if (server.config->GetVariable("options", "reject_duplicate_servers").compare("TRUE") == 0)
+	//Parse reject duplicate servers option.
+	if(server.config->GetVariable("options", "reject_duplicate_servers").compare("TRUE") == 0)
+	{
 		server.options.RejectDuplicateServers(true);
+	}
 
-	local_network = server.config->GetVariable("schema", "account_table");
-	if (local_network.size() > 0)
-		server.options.AccountTable(local_network);
+	//Parse account table option.
+	ln = server.config->GetVariable("schema", "account_table");
+	if(ln.size() > 0)
+	{
+		server.options.AccountTable(ln);
+	}
 
-	local_network = server.config->GetVariable("schema", "world_registration_table");
-	if (local_network.size() > 0)
-		server.options.WorldRegistrationTable(local_network);
+	//Parse world account table option.
+	ln = server.config->GetVariable("schema", "world_registration_table");
+	if(ln.size() > 0)
+	{
+		server.options.WorldRegistrationTable(ln);
+	}
 
-	local_network = server.config->GetVariable("schema", "world_admin_registration_table");
-	if (local_network.size() > 0)
-		server.options.WorldAdminRegistrationTable(local_network);
+	//Parse admin world account table option.
+	ln = server.config->GetVariable("schema", "world_admin_registration_table");
+	if(ln.size() > 0)
+	{
+		server.options.WorldAdminRegistrationTable(ln);
+	}
 
-	local_network = server.config->GetVariable("schema", "world_server_type_table");
-	if (local_network.size() > 0)
-		server.options.WorldServerTypeTable(local_network);
+	//Parse world type table option.
+	ln = server.config->GetVariable("schema", "world_server_type_table");
+	if(ln.size() > 0)
+	{
+		server.options.WorldServerTypeTable(ln);
+	}
 
-	/* Create database connection */
-	if (server.config->GetVariable("database", "subsystem").compare("MySQL") == 0) {
+	//Create our DB from options.
+	if(server.config->GetVariable("database", "subsystem").compare("MySQL") == 0)
+	{
 #ifdef EQEMU_MYSQL_ENABLED
-		Log.Out(Logs::General, Logs::Login_Server, "MySQL Database Init.");
+		server_log->Log(log_debug, "MySQL Database Init.");
 		server.db = (Database*)new DatabaseMySQL(
 			server.config->GetVariable("database", "user"),
 			server.config->GetVariable("database", "password"),
@@ -107,9 +151,10 @@ int main()
 			server.config->GetVariable("database", "db"));
 #endif
 	}
-	else if (server.config->GetVariable("database", "subsystem").compare("PostgreSQL") == 0) {
+	else if(server.config->GetVariable("database", "subsystem").compare("PostgreSQL") == 0)
+	{
 #ifdef EQEMU_POSTGRESQL_ENABLED
-		Log.Out(Logs::General, Logs::Login_Server, "PostgreSQL Database Init.");
+		server_log->Log(log_debug, "PostgreSQL Database Init.");
 		server.db = (Database*)new DatabasePostgreSQL(
 			server.config->GetVariable("database", "user"),
 			server.config->GetVariable("database", "password"),
@@ -119,70 +164,78 @@ int main()
 #endif
 	}
 
-	/* Make sure our database got created okay, otherwise cleanup and exit. */
-	if (!server.db) {
-		Log.Out(Logs::General, Logs::Error, "Database Initialization Failure.");
-		Log.Out(Logs::General, Logs::Login_Server, "Config System Shutdown.");
+	//Make sure our database got created okay, otherwise cleanup and exit.
+	if(!server.db)
+	{
+		server_log->Log(log_error, "Database Initialization Failure.");
+		server_log->Log(log_debug, "Config System Shutdown.");
 		delete server.config;
-		Log.Out(Logs::General, Logs::Login_Server, "Log System Shutdown.");
+		server_log->Log(log_debug, "Log System Shutdown.");
+		delete server_log;
 		return 1;
 	}
 
 #if WIN32
 	//initialize our encryption.
-	Log.Out(Logs::General, Logs::Login_Server, "Encryption Initialize.");
+	server_log->Log(log_debug, "Encryption Initialize.");
 	server.eq_crypto = new Encryption();
-	if (server.eq_crypto->LoadCrypto(server.config->GetVariable("security", "plugin"))) {
-		Log.Out(Logs::General, Logs::Login_Server, "Encryption Loaded Successfully.");
+	if(server.eq_crypto->LoadCrypto(server.config->GetVariable("security", "plugin")))
+	{
+		server_log->Log(log_debug, "Encryption Loaded Successfully.");
 	}
-	else {
+	else
+	{
 		//We can't run without encryption, cleanup and exit.
-		Log.Out(Logs::General, Logs::Error, "Encryption Failed to Load.");
-		Log.Out(Logs::General, Logs::Login_Server, "Database System Shutdown.");
+		server_log->Log(log_error, "Encryption Failed to Load.");
+		server_log->Log(log_debug, "Database System Shutdown.");
 		delete server.db;
-		Log.Out(Logs::General, Logs::Login_Server, "Config System Shutdown.");
+		server_log->Log(log_debug, "Config System Shutdown.");
 		delete server.config;
+		server_log->Log(log_debug, "Log System Shutdown.");
+		delete server_log;
 		return 1;
 	}
 #endif
 
 	//create our server manager.
-	Log.Out(Logs::General, Logs::Login_Server, "Server Manager Initialize.");
-	server.server_manager = new ServerManager();
-	if (!server.server_manager) {
+	server_log->Log(log_debug, "Server Manager Initialize.");
+	server.SM = new ServerManager();
+	if(!server.SM)
+	{
 		//We can't run without a server manager, cleanup and exit.
-		Log.Out(Logs::General, Logs::Error, "Server Manager Failed to Start.");
-
+		server_log->Log(log_error, "Server Manager Failed to Start.");
 #ifdef WIN32
-		Log.Out(Logs::General, Logs::Login_Server, "Encryption System Shutdown.");
+		server_log->Log(log_debug, "Encryption System Shutdown.");
 		delete server.eq_crypto;
 #endif
-
-		Log.Out(Logs::General, Logs::Login_Server, "Database System Shutdown.");
+		server_log->Log(log_debug, "Database System Shutdown.");
 		delete server.db;
-		Log.Out(Logs::General, Logs::Login_Server, "Config System Shutdown.");
+		server_log->Log(log_debug, "Config System Shutdown.");
 		delete server.config;
+		server_log->Log(log_debug, "Log System Shutdown.");
+		delete server_log;
 		return 1;
 	}
 
 	//create our client manager.
-	Log.Out(Logs::General, Logs::Login_Server, "Client Manager Initialize.");
-	server.client_manager = new ClientManager();
-	if (!server.client_manager) {
+	server_log->Log(log_debug, "Client Manager Initialize.");
+	server.CM = new ClientManager();
+	if(!server.CM)
+	{
 		//We can't run without a client manager, cleanup and exit.
-		Log.Out(Logs::General, Logs::Error, "Client Manager Failed to Start.");
-		Log.Out(Logs::General, Logs::Login_Server, "Server Manager Shutdown.");
-		delete server.server_manager;
-
+		server_log->Log(log_error, "Client Manager Failed to Start.");
+		server_log->Log(log_debug, "Server Manager Shutdown.");
+		delete server.SM;
 #ifdef WIN32
-		Log.Out(Logs::General, Logs::Login_Server, "Encryption System Shutdown.");
+		server_log->Log(log_debug, "Encryption System Shutdown.");
 		delete server.eq_crypto;
 #endif
-
-		Log.Out(Logs::General, Logs::Login_Server, "Database System Shutdown.");
+		server_log->Log(log_debug, "Database System Shutdown.");
 		delete server.db;
-		Log.Out(Logs::General, Logs::Login_Server, "Config System Shutdown.");
+		server_log->Log(log_debug, "Config System Shutdown.");
 		delete server.config;
+		server_log->Log(log_debug, "Log System Shutdown.");
+		delete server_log;
 		return 1;
 	}
 
@@ -194,29 +247,30 @@ int main()
 #endif
 #endif
 
-	Log.Out(Logs::General, Logs::Login_Server, "Server Started.");
-	while (run_server) {
+	server_log->Log(log_debug, "Server Started.");
+	while(run_server)
+	{
 		Timer::SetCurrentTime();
-		server.client_manager->Process();
-		server.server_manager->Process();
+		server.CM->Process();
+		server.SM->Process();
 		Sleep(100);
 	}
 
-	Log.Out(Logs::General, Logs::Login_Server, "Server Shutdown.");
-	Log.Out(Logs::General, Logs::Login_Server, "Client Manager Shutdown.");
-	delete server.client_manager;
-	Log.Out(Logs::General, Logs::Login_Server, "Server Manager Shutdown.");
-	delete server.server_manager;
-
+	server_log->Log(log_debug, "Server Shutdown.");
+	server_log->Log(log_debug, "Client Manager Shutdown.");
+	delete server.CM;
+	server_log->Log(log_debug, "Server Manager Shutdown.");
+	delete server.SM;
 #ifdef WIN32
-	Log.Out(Logs::General, Logs::Login_Server, "Encryption System Shutdown.");
+	server_log->Log(log_debug, "Encryption System Shutdown.");
 	delete server.eq_crypto;
 #endif
-
-	Log.Out(Logs::General, Logs::Login_Server, "Database System Shutdown.");
+	server_log->Log(log_debug, "Database System Shutdown.");
 	delete server.db;
-	Log.Out(Logs::General, Logs::Login_Server, "Config System Shutdown.");
+	server_log->Log(log_debug, "Config System Shutdown.");
 	delete server.config;
+	server_log->Log(log_debug, "Log System Shutdown.");
+	delete server_log;
 	return 0;
 }
 

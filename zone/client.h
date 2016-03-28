@@ -226,7 +226,7 @@ public:
 	virtual inline bool IsBerserk() { return berserk; }
 	virtual int32 GetMeleeMitDmg(Mob *attacker, int32 damage, int32 minhit, float mit_rating, float atk_rating);
 	virtual void SetAttackTimer();
-	int GetQuiverHaste(int delay);
+	float GetQuiverHaste();
 	void DoAttackRounds(Mob *target, int hand, bool IsFromSpell = false);
 
 	void AI_Init();
@@ -679,7 +679,7 @@ public:
 
 	void IncreaseSkill(int skill_id, int value = 1) { if (skill_id <= HIGHEST_SKILL) { m_pp.skills[skill_id] += value; } }
 	void IncreaseLanguageSkill(int skill_id, int value = 1);
-	virtual uint16 GetSkill(SkillUseTypes skill_id) const {if (skill_id <= HIGHEST_SKILL) {return(itembonuses.skillmod[skill_id] > 0 ? (itembonuses.skillmodmax[skill_id] > 0 ? std::min(m_pp.skills[skill_id] + itembonuses.skillmodmax[skill_id], m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100) : m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100) : m_pp.skills[skill_id]);} return 0;}
+	virtual uint16 GetSkill(SkillUseTypes skill_id) const { if (skill_id <= HIGHEST_SKILL) { return((itembonuses.skillmod[skill_id] > 0) ? m_pp.skills[skill_id] * (100 + itembonuses.skillmod[skill_id]) / 100 : m_pp.skills[skill_id]); } return 0; }
 	uint32 GetRawSkill(SkillUseTypes skill_id) const { if (skill_id <= HIGHEST_SKILL) { return(m_pp.skills[skill_id]); } return 0; }
 	bool HasSkill(SkillUseTypes skill_id) const;
 	bool CanHaveSkill(SkillUseTypes skill_id) const;
@@ -712,7 +712,6 @@ public:
 	// use this one instead
 	void MemSpell(uint16 spell_id, int slot, bool update_client = true);
 	void UnmemSpell(int slot, bool update_client = true);
-	void UnmemSpellBySpellID(int32 spell_id);
 	void UnmemSpellAll(bool update_client = true);
 	void ScribeSpell(uint16 spell_id, int slot, bool update_client = true);
 	void UnscribeSpell(int slot, bool update_client = true);
@@ -879,8 +878,6 @@ public:
 	void SetFilter(eqFilterType filter_id, eqFilterMode value) { ClientFilters[filter_id]=value; }
 
 	void BreakInvis();
-	void BreakSneakWhenCastOn(Mob* caster, bool IsResisted);
-	void BreakFeignDeathWhenCastOn(bool IsResisted);
 	void LeaveGroup();
 
 	bool Hungry() const {if (GetGM()) return false; return m_pp.hunger_level <= 3000;}
@@ -926,8 +923,6 @@ public:
 	void ResetTrade();
 	void DropInst(const ItemInst* inst);
 	bool TrainDiscipline(uint32 itemid);
-	void TrainDiscBySpellID(int32 spell_id);
-	int GetDiscSlotBySpellID(int32 spellid);
 	void SendDisciplineUpdate();
 	void SendDisciplineTimer(uint32 timer_id, uint32 duration);
 	bool UseDiscipline(uint32 spell_id, uint32 target);
@@ -1474,6 +1469,7 @@ private:
 	Timer global_channel_timer;
 	Timer shield_timer;
 	Timer fishing_timer;
+	Timer ping_timer;
 	Timer endupkeep_timer;
 	Timer forget_timer; // our 2 min everybody forgets you timer
 	Timer autosave_timer;

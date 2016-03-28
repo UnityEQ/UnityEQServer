@@ -77,15 +77,15 @@ namespace Titanium
 		//register our world signature.
 		pname = std::string(name) + "_world";
 		signature.ignore_eq_opcode = 0;
-		signature.first_length = sizeof(structs::LoginInfo_Struct);
-		signature.first_eq_opcode = opcodes->EmuToEQ(OP_SendLoginInfo);
+		signature.first_length = sizeof(LoginInfo_Struct);
+		signature.first_eq_opcode = OP_SendLoginInfo;
 		into.RegisterWebPatch(signature, pname.c_str(), &opcodes, &struct_strategy);
 
 		//register our zone signature.
 		pname = std::string(name) + "_zone";
-		signature.ignore_eq_opcode = opcodes->EmuToEQ(OP_AckPacket);
-		signature.first_length = sizeof(structs::ClientZoneEntry_Struct);
-		signature.first_eq_opcode = opcodes->EmuToEQ(OP_ZoneEntry);
+		signature.ignore_eq_opcode = OP_AckPacket;
+		signature.first_length = sizeof(ClientZoneEntry_Struct);
+		signature.first_eq_opcode = OP_ZoneEntry;
 		into.RegisterWebPatch(signature, pname.c_str(), &opcodes, &struct_strategy);
 
 		Log.Out(Logs::General, Logs::Netcode, "[IDENTIFY] Registered patch %s for WebStream", name);
@@ -152,7 +152,6 @@ namespace Titanium
 		OUT(type);
 		//OUT(damage);
 		OUT(spell);
-		OUT(buff_unknown); // if this is 4, a buff icon is made
 
 		FINISH_ENCODE();
 	}
@@ -1329,19 +1328,6 @@ namespace Titanium
 
 		VARSTRUCT_ENCODE_STRING(OutBuffer, emu->sayer);
 
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[0]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[1]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[2]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[3]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[4]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[5]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[6]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[7]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[8]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[9]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[10]);
-		VARSTRUCT_ENCODE_TYPE(uint8, OutBuffer, emu->unknown12[11]);
-
 		VARSTRUCT_ENCODE_STRING(OutBuffer, new_message.c_str());
 
 		delete[] __emu_buffer;
@@ -2070,11 +2056,8 @@ namespace Titanium
 		IN(material);
 		IN(color.Color);
 		IN(wear_slot_id);
-		emu->unknown06 = 0;
 		emu->elite_material = 0;
 		emu->hero_forge_model = 0;
-		emu->unknown18 = 0;
-
 		FINISH_DIRECT_DECODE();
 	}
 

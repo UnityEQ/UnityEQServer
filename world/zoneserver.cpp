@@ -51,24 +51,20 @@ extern WebInterfaceConnection WILink;
 void CatchSignal(int sig_num);
 
 ZoneServer::ZoneServer(EmuTCPConnection* itcpc)
-: WorldTCPConnection(), tcpc(itcpc), zone_boot_timer(5000) {
-
-	/* Set Process tracking variable defaults */
-
+: WorldTCPConnection(), tcpc(itcpc), ls_zboot(5000) {
+	ID = zoneserver_list.GetNextID();
 	memset(zone_name, 0, sizeof(zone_name));
 	memset(compiled, 0, sizeof(compiled));
-	memset(client_address, 0, sizeof(client_address));
-	memset(client_local_address, 0, sizeof(client_local_address));
+	zoneID = 0;
+	instanceID = 0;
 
-	zone_server_id = zoneserver_list.GetNextID();
-	zone_server_zone_id = 0;
-	instance_id = 0;
-	zone_os_process_id = 0;
-	client_port = 0;
-	is_booting_up = false;
-	is_authenticated = false;
-	is_static_zone = false;
-	zone_player_count = 0;
+	memset(clientaddress, 0, sizeof(clientaddress));
+	memset(clientlocaladdress, 0, sizeof(clientlocaladdress));
+	clientport = 0;
+	BootingUp = false;
+	authenticated = false;
+	staticzone = false;
+	pNumPlayers = 0;
 }
 
 ZoneServer::~ZoneServer() {
@@ -78,7 +74,7 @@ ZoneServer::~ZoneServer() {
 }
 
 bool ZoneServer::SetZone(uint32 iZoneID, uint32 iInstanceID, bool iStaticZone) {
-	is_booting_up = false;
+	BootingUp = false;
 
 	const char* zn = MakeLowerString(database.GetZoneName(iZoneID));
 	char*	longname;
@@ -87,17 +83,17 @@ bool ZoneServer::SetZone(uint32 iZoneID, uint32 iInstanceID, bool iStaticZone) {
 		Log.Out(Logs::Detail, Logs::World_Server,"Setting to '%s' (%d:%d)%s",(zn) ? zn : "",iZoneID, iInstanceID,
 			iStaticZone ? " (Static)" : "");
 
-	zone_server_zone_id = iZoneID;
-	instance_id = iInstanceID;
+	zoneID = iZoneID;
+	instanceID = iInstanceID;
 	if(iZoneID!=0)
-		zone_server_previous_zone_id = iZoneID;
-	if (zone_server_zone_id == 0) {
+		oldZoneID = iZoneID;
+	if (zoneID == 0) {
 		client_list.CLERemoveZSRef(this);
-		zone_player_count = 0;
+		pNumPlayers = 0;
 		LSSleepUpdate(GetPrevZoneID());
 	}
 
-	is_static_zone = iStaticZone;
+	staticzone = iStaticZone;
 
 	if (zn)
 	{
@@ -117,7 +113,7 @@ bool ZoneServer::SetZone(uint32 iZoneID, uint32 iInstanceID, bool iStaticZone) {
 	}
 
 	client_list.ZoneBootup(this);
-	zone_boot_timer.Start();
+	ls_zboot.Start();
 
 	return true;
 }
@@ -178,19 +174,19 @@ void ZoneServer::LSSleepUpdate(uint32 zoneid){
 bool ZoneServer::Process() {
 	if (!tcpc->Connected())
 		return false;
-	if(zone_boot_timer.Check()){
+	if(ls_zboot.Check()){
 		LSBootUpdate(GetZoneID(), true);
-		zone_boot_timer.Disable();
+		ls_zboot.Disable();
 	}
 	ServerPacket *pack = 0;
 	while((pack = tcpc->PopPacket())) {
-		if (!is_authenticated) {
+		if (!authenticated) {
 			if (WorldConfig::get()->SharedKey.length() > 0) {
 				if (pack->opcode == ServerOP_ZAAuth && pack->size == 16) {
 					uint8 tmppass[16];
 					MD5::Generate((const uchar*) WorldConfig::get()->SharedKey.c_str(), WorldConfig::get()->SharedKey.length(), tmppass);
 					if (memcmp(pack->pBuffer, tmppass, 16) == 0)
-						is_authenticated = true;
+						authenticated = true;
 					else {
 						struct in_addr in;
 						in.s_addr = GetIP();
@@ -216,7 +212,7 @@ bool ZoneServer::Process() {
 			else
 			{
 				Log.Out(Logs::Detail, Logs::World_Server,"**WARNING** You have not configured a world shared key in your config file. You should add a <key>STRING</key> element to your <world> element to prevent unauthroized zone access.");
-				is_authenticated = true;
+				authenticated = true;
 			}
 		}
 		switch(pack->opcode) {
@@ -588,31 +584,27 @@ bool ZoneServer::Process() {
 				ServerConnectInfo* sci = (ServerConnectInfo*) pack->pBuffer;
 
 				if (!sci->port) {
-					client_port = zoneserver_list.GetAvailableZonePort();
+					clientport = zoneserver_list.GetAvailableZonePort();
 
 					ServerPacket p(ServerOP_SetConnectInfo, sizeof(ServerConnectInfo));
 					memset(p.pBuffer,0,sizeof(ServerConnectInfo));
 					ServerConnectInfo* sci = (ServerConnectInfo*) p.pBuffer;
-					sci->port = client_port;
+					sci->port = clientport;
 					SendPacket(&p);
-					Log.Out(Logs::Detail, Logs::World_Server,"Auto zone port configuration. Telling zone to use port %d",client_port);
+					Log.Out(Logs::Detail, Logs::World_Server,"Auto zone port configuration. Telling zone to use port %d",clientport);
 				} else {
-					client_port = sci->port;
-					Log.Out(Logs::Detail, Logs::World_Server,"Zone specified port %d.",client_port);
+					clientport = sci->port;
+					Log.Out(Logs::Detail, Logs::World_Server,"Zone specified port %d.",clientport);
 				}
 
 				if(sci->address[0]) {
-					strn0cpy(client_address, sci->address, 250);
+					strn0cpy(clientaddress, sci->address, 250);
 					Log.Out(Logs::Detail, Logs::World_Server, "Zone specified address %s.", sci->address);
 				}
 
 				if(sci->local_address[0]) {
-					strn0cpy(client_local_address, sci->local_address, 250);
+					strn0cpy(clientlocaladdress, sci->local_address, 250);
 					Log.Out(Logs::Detail, Logs::World_Server, "Zone specified local address %s.", sci->address);
-				}
-
-				if (sci->process_id){
-					zone_os_process_id = sci->process_id;
 				}
 
 			}
@@ -828,11 +820,6 @@ bool ZoneServer::Process() {
 				RuleManager::Instance()->LoadRules(&database, "default");
 				break;
 			}
-			case ServerOP_ReloadPerlExportSettings:
-			{
-				zoneserver_list.SendPacket(pack);
-				break;
-			}
 			case ServerOP_CameraShake:
 			{
 				zoneserver_list.SendPacket(pack);
@@ -991,8 +978,8 @@ bool ZoneServer::Process() {
 				Log.Out(Logs::Detail, Logs::World_Server,"Received SetWorldTime");
 				eqTimeOfDay* newtime = (eqTimeOfDay*) pack->pBuffer;
 				zoneserver_list.worldclock.SetCurrentEQTimeOfDay(newtime->start_eqtime, newtime->start_realtime);
-				Log.Out(Logs::Detail, Logs::World_Server, "New time = %d-%d-%d %d:%d (%d)\n", newtime->start_eqtime.year, newtime->start_eqtime.month, (int)newtime->start_eqtime.day, (int)newtime->start_eqtime.hour, (int)newtime->start_eqtime.minute, (int)newtime->start_realtime);
-				database.SaveTime((int)newtime->start_eqtime.minute, (int)newtime->start_eqtime.hour, (int)newtime->start_eqtime.day, newtime->start_eqtime.month, newtime->start_eqtime.year);
+				Log.Out(Logs::Detail, Logs::World_Server,"New time = %d-%d-%d %d:%d (%d)\n", newtime->start_eqtime.year, newtime->start_eqtime.month, (int)newtime->start_eqtime.day, (int)newtime->start_eqtime.hour, (int)newtime->start_eqtime.minute, (int)newtime->start_realtime);
+				zoneserver_list.worldclock.saveFile(WorldConfig::get()->EQTimeFile.c_str());
 				zoneserver_list.SendTimeSync();
 				break;
 			}
@@ -1311,6 +1298,7 @@ bool ZoneServer::Process() {
 			case ServerOP_WIRemoteCallResponse:
 			case ServerOP_WIClientSession:
 			case ServerOP_WIRemoteCallToClient:
+			case ServerOP_WIRemoteOpcodeToClient:
 			{
 				WILink.SendPacket(pack);
 				break;
@@ -1434,13 +1422,13 @@ void ZoneServer::ChangeWID(uint32 iCharID, uint32 iWID) {
 
 
 void ZoneServer::TriggerBootup(uint32 iZoneID, uint32 iInstanceID, const char* adminname, bool iMakeStatic) {
-	is_booting_up = true;
-	zone_server_zone_id = iZoneID;
-	instance_id = iInstanceID;
+	BootingUp = true;
+	zoneID = iZoneID;
+	instanceID = iInstanceID;
 
 	auto pack = new ServerPacket(ServerOP_ZoneBootup, sizeof(ServerZoneStateChange_struct));
 	ServerZoneStateChange_struct* s = (ServerZoneStateChange_struct *) pack->pBuffer;
-	s->ZoneServerID = zone_server_id;
+	s->ZoneServerID = ID;
 	if (adminname != 0)
 		strcpy(s->adminname, adminname);
 
@@ -1457,7 +1445,7 @@ void ZoneServer::TriggerBootup(uint32 iZoneID, uint32 iInstanceID, const char* a
 }
 
 void ZoneServer::IncomingClient(Client* client) {
-	is_booting_up = true;
+	BootingUp = true;
 	auto pack = new ServerPacket(ServerOP_ZoneIncClient, sizeof(ServerZoneIncomingClient_Struct));
 	ServerZoneIncomingClient_Struct* s = (ServerZoneIncomingClient_Struct*) pack->pBuffer;
 	s->zoneid = GetZoneID();

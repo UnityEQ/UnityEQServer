@@ -113,7 +113,7 @@ Mob::Mob(const char* in_name,
 	targeted = 0;
 	tar_ndx=0;
 	tar_vector=0;
-	currently_fleeing = false;
+	curfp = false;
 
 	AI_Init();
 	SetMoving(false);
@@ -371,7 +371,7 @@ Mob::Mob(const char* in_name,
 	follow=0;
 	follow_dist = 100;	// Default Distance for Follow
 	flee_mode = false;
-	currently_fleeing = false;
+	curfp = false;
 	flee_timer.Start();
 
 	permarooted = (runspeed > 0) ? false : true;
@@ -433,9 +433,6 @@ Mob::Mob(const char* in_name,
 
 	emoteid = 0;
 	endur_upkeep = false;
-	PrimaryAggro = false;
-	AssistAggro = false;
-	npc_assist_cap = 0;
 }
 
 Mob::~Mob()
@@ -506,9 +503,13 @@ void Mob::SetInvisible(uint8 state)
 	SendAppearancePacket(AT_Invis, invisible);
 	// Invis and hide breaks charms
 
-	auto formerpet = GetPet();
-	if (formerpet && formerpet->GetPetType() == petCharmed && (invisible || hidden || improved_hidden))
-		formerpet->BuffFadeByEffect(SE_Charm);
+	if ((this->GetPetType() == petCharmed) && (invisible || hidden || improved_hidden))
+	{
+		Mob* formerpet = this->GetPet();
+
+		if(formerpet)
+			formerpet->BuffFadeByEffect(SE_Charm);
+	}
 }
 
 //check to see if `this` is invisible to `other`
@@ -1076,10 +1077,10 @@ void Mob::FillSpawnStruct(NewSpawn_Struct* ns, Mob* ForWho)
 		strn0cpy(ns->spawn.lastName, lastname, sizeof(ns->spawn.lastName));
 	}
 
-	ns->spawn.heading	= FloatToEQ19(m_Position.w);
-	ns->spawn.x			= FloatToEQ19(m_Position.x);//((int32)x_pos)<<3;
-	ns->spawn.y			= FloatToEQ19(m_Position.y);//((int32)y_pos)<<3;
-	ns->spawn.z			= FloatToEQ19(m_Position.z);//((int32)z_pos)<<3;
+	ns->spawn.heading	= m_Position.w;
+	ns->spawn.x			= m_Position.x;//((int32)x_pos)<<3;
+	ns->spawn.y			= m_Position.y;//((int32)y_pos)<<3;
+	ns->spawn.z			= m_Position.z;//((int32)z_pos)<<3;
 	ns->spawn.spawnId	= GetID();
 	ns->spawn.curHp	= static_cast<uint8>(GetHPRatio());
 	ns->spawn.max_hp	= 100;		//this field needs a better name
@@ -1421,19 +1422,15 @@ void Mob::SendPosUpdate(uint8 iSendToSelf) {
 void Mob::MakeSpawnUpdateNoDelta(PlayerPositionUpdateServer_Struct *spu){
 	memset(spu,0xff,sizeof(PlayerPositionUpdateServer_Struct));
 	spu->spawn_id	= GetID();
-	spu->x_pos		= FloatToEQ19(m_Position.x);
-	spu->y_pos		= FloatToEQ19(m_Position.y);
-	spu->z_pos		= FloatToEQ19(m_Position.z);
-	spu->delta_x	= NewFloatToEQ13(0);
-	spu->delta_y	= NewFloatToEQ13(0);
-	spu->delta_z	= NewFloatToEQ13(0);
-	spu->heading	= FloatToEQ19(m_Position.w);
-	spu->animation	= 0;
-	spu->delta_heading = NewFloatToEQ13(0);
-	spu->padding0002	=0;
-	spu->padding0006	=7;
-	spu->padding0014	=0x7f;
-	spu->padding0018	=0x5df27;
+	spu->x_pos		= m_Position.x;
+	spu->y_pos		= m_Position.y;
+	spu->z_pos		= m_Position.z;
+	spu->delta_x = 0;
+	spu->delta_y = 0;
+	spu->delta_z = 0;
+	spu->rotation	= m_Position.w;
+	spu->animationspeed	= 0;
+	spu->delta_heading = 0;
 
 	if(IsNPC()) {
 		std::vector<std::string> params;
@@ -1454,22 +1451,18 @@ void Mob::MakeSpawnUpdateNoDelta(PlayerPositionUpdateServer_Struct *spu){
 // this is for SendPosUpdate()
 void Mob::MakeSpawnUpdate(PlayerPositionUpdateServer_Struct* spu) {
 	spu->spawn_id	= GetID();
-	spu->x_pos		= FloatToEQ19(m_Position.x);
-	spu->y_pos		= FloatToEQ19(m_Position.y);
-	spu->z_pos		= FloatToEQ19(m_Position.z);
-	spu->delta_x	= NewFloatToEQ13(m_Delta.x);
-	spu->delta_y	= NewFloatToEQ13(m_Delta.y);
-	spu->delta_z	= NewFloatToEQ13(m_Delta.z);
-	spu->heading	= FloatToEQ19(m_Position.w);
-	spu->padding0002	=0;
-	spu->padding0006	=7;
-	spu->padding0014	=0x7f;
-	spu->padding0018	=0x5df27;
+	spu->x_pos = m_Position.x;
+	spu->y_pos = m_Position.y;
+	spu->z_pos = m_Position.z;
+	spu->delta_x = m_Delta.x;
+	spu->delta_y = m_Delta.y;
+	spu->delta_z = m_Delta.z;
+	spu->rotation = m_Position.w;
 	if(this->IsClient())
-		spu->animation = animation;
+		spu->animationspeed = animation;
 	else
-		spu->animation	= pRunAnimSpeed;
-	spu->delta_heading = NewFloatToEQ13(m_Delta.w);
+		spu->animationspeed = pRunAnimSpeed;
+	spu->delta_heading = m_Delta.w;
 }
 
 void Mob::ShowStats(Client* client)
@@ -2714,8 +2707,6 @@ bool Mob::RemoveFromHateList(Mob* mob)
 		{
 			AI_Event_NoLongerEngaged();
 			zone->DelAggroMob();
-			if (IsNPC() && !RuleB(Aggro, AllowTickPulling))
-				ResetAssistCap();
 		}
 	}
 	if(GetTarget() == mob)
@@ -2822,12 +2813,8 @@ void Mob::SendTextureWC(uint8 slot, uint16 texture, uint32 hero_forge_model, uin
 	else
 		wc->color.Color = this->GetArmorTint(slot);
 	wc->wear_slot_id = slot;
-
-	wc->unknown06 = unknown06;
 	wc->elite_material = elite_material;
 	wc->hero_forge_model = hero_forge_model;
-	wc->unknown18 = unknown18;
-
 
 	entity_list.QueueClients(this, outapp);
 	safe_delete(outapp);
@@ -4520,19 +4507,15 @@ void Mob::DoKnockback(Mob *caster, uint32 pushback, uint32 pushup)
 		double new_y = pushback * cos(double(look_heading * 3.141592 / 180.0));
 
 		spu->spawn_id	= GetID();
-		spu->x_pos		= FloatToEQ19(GetX());
-		spu->y_pos		= FloatToEQ19(GetY());
-		spu->z_pos		= FloatToEQ19(GetZ());
-		spu->delta_x	= NewFloatToEQ13(static_cast<float>(new_x));
-		spu->delta_y	= NewFloatToEQ13(static_cast<float>(new_y));
-		spu->delta_z	= NewFloatToEQ13(static_cast<float>(pushup));
-		spu->heading	= FloatToEQ19(GetHeading());
-		spu->padding0002	=0;
-		spu->padding0006	=7;
-		spu->padding0014	=0x7f;
-		spu->padding0018	=0x5df27;
-		spu->animation = 0;
-		spu->delta_heading = NewFloatToEQ13(0);
+		spu->x_pos		= GetX();
+		spu->y_pos		= GetY();
+		spu->z_pos		= GetZ();
+		spu->delta_x	= (static_cast<float>(new_x));
+		spu->delta_y	= (static_cast<float>(new_y));
+		spu->delta_z	= (static_cast<float>(pushup));
+		spu->rotation	= GetHeading();
+		spu->animationspeed = 0;
+		spu->delta_heading = 0;
 		outapp_push->priority = 6;
 		entity_list.QueueClients(this, outapp_push, true);
 		CastToClient()->FastQueuePacket(&outapp_push);
@@ -5617,18 +5600,18 @@ int32 Mob::GetSpellStat(uint32 spell_id, const char *identifier, uint8 slot)
 	else if (id == "NimbusEffect") {return spells[spell_id].NimbusEffect; }
 	else if (id == "directional_start") {return static_cast<int32>(spells[spell_id].directional_start); }
 	else if (id == "directional_end") {return static_cast<int32>(spells[spell_id].directional_end); }
-	else if (id == "not_focusable") {return spells[spell_id].not_focusable; }
+	else if (id == "not_extendable") {return spells[spell_id].not_extendable; }
 	else if (id == "suspendable") {return spells[spell_id].suspendable; }
 	else if (id == "viral_range") {return spells[spell_id].viral_range; }
 	else if (id == "spellgroup") {return spells[spell_id].spellgroup; }
 	else if (id == "rank") {return spells[spell_id].rank; }
-	else if (id == "no_resist") {return spells[spell_id].no_resist; }
+	else if (id == "powerful_flag") {return spells[spell_id].powerful_flag; }
 	else if (id == "CastRestriction") {return spells[spell_id].CastRestriction; }
 	else if (id == "AllowRest") {return spells[spell_id].AllowRest; }
 	else if (id == "InCombat") {return spells[spell_id].InCombat; }
 	else if (id == "OutofCombat") {return spells[spell_id].OutofCombat; }
 	else if (id == "aemaxtargets") {return spells[spell_id].aemaxtargets; }
-	else if (id == "no_heal_damage_item_mod") {return spells[spell_id].no_heal_damage_item_mod; }
+	else if (id == "maxtargets") {return spells[spell_id].maxtargets; }
 	else if (id == "persistdeath") {return spells[spell_id].persistdeath; }
 	else if (id == "min_dist") {return static_cast<int32>(spells[spell_id].min_dist); }
 	else if (id == "min_dist_mod") {return static_cast<int32>(spells[spell_id].min_dist_mod); }
@@ -5699,12 +5682,4 @@ void Mob::SetCurrentSpeed(int in){
 			SendPosition();
 		}
 	}
-}
-
-int32 Mob::GetMeleeMitigation() {
-	int32 mitigation = 0;
-	mitigation += spellbonuses.MeleeMitigationEffect;
-	mitigation += itembonuses.MeleeMitigationEffect;
-	mitigation += aabonuses.MeleeMitigationEffect;
-	return mitigation;
 }

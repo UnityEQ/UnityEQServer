@@ -277,6 +277,10 @@ void EQEmuConfig::do_files(TiXmlElement *ele)
 	if (text) {
 		OpCodesFile = text;
 	}
+	text = ParseTextBlock(ele, "eqtime", true);
+	if (text) {
+		EQTimeFile = text;
+	}
 }
 
 void EQEmuConfig::do_directories(TiXmlElement *ele)
@@ -427,6 +431,9 @@ std::string EQEmuConfig::GetByName(const std::string &var_name) const
 	if (var_name == "OpCodesFile") {
 		return (OpCodesFile);
 	}
+	if (var_name == "EQTimeFile") {
+		return (EQTimeFile);
+	}
 	if (var_name == "MapDir") {
 		return (MapDir);
 	}
@@ -497,6 +504,7 @@ void EQEmuConfig::Dump() const
 	std::cout << "WebInterfacePrivKey = " << WebInterfacePrivKey << std::endl;
 	std::cout << "SpellsFile = " << SpellsFile << std::endl;
 	std::cout << "OpCodesFile = " << OpCodesFile << std::endl;
+	std::cout << "EQTimeFile = " << EQTimeFile << std::endl;
 	std::cout << "MapDir = " << MapDir << std::endl;
 	std::cout << "QuestDir = " << QuestDir << std::endl;
 	std::cout << "PluginDir = " << PluginDir << std::endl;

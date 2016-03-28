@@ -19,14 +19,8 @@ StructStrategy::StructStrategy() {
 }
 
 void StructStrategy::Encode(EQApplicationPacket **p, std::shared_ptr<EQStreamInterface> dest, bool ack_req) const {
-	if((*p)->GetOpcodeBypass() != 0) {
-		PassEncoder(p, dest, ack_req);
-		return;
-	}
-
-	EmuOpcode op = (*p)->GetOpcode();
-	Encoder proc = encoders[op];
-	proc(p, dest, ack_req);
+	PassEncoder(p, dest, ack_req);
+	return;
 }
 
 void StructStrategy::Decode(EQApplicationPacket *p) const {

@@ -36,7 +36,7 @@
 } \
 
 #define VerifyID() std::string id; \
-	if (document.HasMember("id")) { \
+	if (document.HasMember("id") && !document["id"].Empty() &&  document["id"].IsString()) { \
 		id = document["id"].GetString(); \
 	} \
 

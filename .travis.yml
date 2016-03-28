@@ -1,17 +1,11 @@
 language: cpp
 compiler: gcc
-sudo: false
-addons:
-  apt:
-    packages:
-    - libmysqlclient-dev
-    - libperl-dev
-    - libboost-dev
-    - liblua5.1-0-dev
-    - zlib1g-dev
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get install -y libmysqlclient-dev libperl-dev libboost-dev liblua5.1-0-dev zlib1g-dev
 script:
   - cmake -G "Unix Makefiles" -DEQEMU_BUILD_TESTS=ON -DEQEMU_ENABLE_BOTS=ON
-  - make -j8
+  - make
   - ./bin/tests
 branches:
   only:

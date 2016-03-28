@@ -55,7 +55,7 @@
 
 extern QueryServ* QServ;
 extern Zone* zone;
-extern volatile bool is_zone_loaded;
+extern volatile bool ZoneLoaded;
 extern WorldServer worldserver;
 extern PetitionList petition_list;
 extern EntityList entity_list;
@@ -224,6 +224,12 @@ bool Client::Process() {
 					InterruptSpell(SONG_ENDS_ABRUPTLY, 0x121, bardsong);
 				//SpellFinished(bardsong, bardsong_target, bardsong_slot, spells[bardsong].mana);
 			}
+
+			//let the stream factory know were done with this stream
+			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+			outapp->pBuffer[0] = 1; // 1 = disconnect from zone unexpectedly
+			QueuePacket(outapp);
+			safe_delete(outapp);
 		}
 
 		if(GetMerc())
@@ -485,6 +491,13 @@ bool Client::Process() {
 				DoGravityEffect();
 		}
 
+		if(ping_timer.Check())
+		{
+			EQApplicationPacket* app = new EQApplicationPacket(OP_EmuKeepAlive, 0);
+			QueuePacket(app);
+			safe_delete(app);
+		}
+
 		if (shield_timer.Check())
 		{
 			if (shield_target)
@@ -604,12 +617,44 @@ bool Client::Process() {
 	EQApplicationPacket *app = nullptr;
 	if(!eqs->CheckState(CLOSING))
 	{
+
 		while(ret && (app = (EQApplicationPacket *)eqs->PopPacket())) {
 			if(app)
 				ret = HandlePacket(app);
 			safe_delete(app);
 		}
+		ret = true;
+		while(ret && (app = (EQApplicationPacket *)eqs->PushPacket())) {
+
+			uint32 zone_id = -1;
+			uint32 instance_id = -1;
+
+			if(zone)
+			{
+				zone_id = zone->GetZoneID();
+				instance_id = zone->GetInstanceID();
+			}
+			std::string method = "Client.Opcode";
+
+			uint32 sz = (uint32)((uint32)eqs->GetConnectionID().size() + method.size() + 16 + 3 + 4 + 4 + 4 + + 4 + app->size);
+			ServerPacket *pack = new ServerPacket(ServerOP_WIRemoteOpcodeToClient, sz);
+			pack->WriteUInt32((uint32)eqs->GetConnectionID().size());
+			pack->WriteString(eqs->GetConnectionID().c_str());
+			pack->WriteUInt32((uint32)method.size());
+			pack->WriteString(method.c_str());
+			pack->WriteUInt32((uint32)zone_id);
+			pack->WriteUInt32((uint32)instance_id);
+			pack->WriteUInt32((uint32)app->GetOpcode());
+			pack->WriteUInt32((uint32)app->size);
+			pack->WriteData((char*)app->pBuffer, app->size);
+
+			worldserver.SendPacket(pack);
+			safe_delete(app);
+			safe_delete(pack);
+		}
 	}
+
+
 
 #ifdef REVERSE_AGGRO
 	//At this point, we are still connected, everything important has taken
@@ -1152,11 +1197,6 @@ void Client::OPMemorizeSpell(const EQApplicationPacket* app)
 			if(inst && inst->IsType(ItemClassCommon))
 			{
 				const Item_Struct* item = inst->GetItem();
-
-				if (RuleB(Character, RestrictSpellScribing) && !item->IsEquipable(GetRace(), GetClass())) {
-					Message_StringID(13, CANNOT_USE_ITEM);
-					break;
-				}
 
 				if(item && item->Scroll.Effect == (int32)(memspell->spell_id))
 				{

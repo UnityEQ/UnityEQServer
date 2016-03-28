@@ -292,7 +292,6 @@
 	void Handle_OP_WearChange(const EQApplicationPacket *app);
 	void Handle_OP_WhoAllRequest(const EQApplicationPacket *app);
 	void Handle_OP_XTargetAutoAddHaters(const EQApplicationPacket *app);
-	void Handle_OP_XTargetOpen(const EQApplicationPacket *app);
 	void Handle_OP_XTargetRequest(const EQApplicationPacket *app);
 	void Handle_OP_YellForHelp(const EQApplicationPacket *app);
 	void Handle_OP_ZoneChange(const EQApplicationPacket *app);

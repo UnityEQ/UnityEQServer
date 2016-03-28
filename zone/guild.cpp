@@ -248,9 +248,7 @@ void Client::RefreshGuildInfo()
 
 		if((guild_id != OldGuildID) && GuildBanks)
 		{
-			// Unsure about this for RoF+ ... But they don't have that action anymore so fuck it
-			if (GetClientVersion() < ClientVersion::RoF)
-				ClearGuildBank();
+			ClearGuildBank();
 
 			if(guild_id != GUILD_NONE)
 				GuildBanks->SendGuildBank(this);

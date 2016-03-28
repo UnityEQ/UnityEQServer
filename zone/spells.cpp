@@ -75,7 +75,6 @@ Copyright (C) 2001-2002 EQEMu Development Team (http://eqemu.org)
 #include "../common/skills.h"
 #include "../common/spdat.h"
 #include "../common/string_util.h"
-#include "../common/data_verification.h"
 
 #include "quest_parser_collection.h"
 #include "string_ids.h"
@@ -101,7 +100,7 @@ Copyright (C) 2001-2002 EQEMu Development Team (http://eqemu.org)
 
 
 extern Zone* zone;
-extern volatile bool is_zone_loaded;
+extern volatile bool ZoneLoaded;
 extern WorldServer worldserver;
 
 // this is run constantly for every mob
@@ -750,6 +749,14 @@ bool Client::CheckFizzle(uint16 spell_id)
 
 	// always at least 1% chance to fail or 5% to succeed
 	fizzlechance = fizzlechance < 1 ? 1 : (fizzlechance > 95 ? 95 : fizzlechance);
+
+	/*
+	if(IsBardSong(spell_id))
+	{
+		//This was a channel chance modifier - no evidence for fizzle reduction
+		fizzlechance -= GetAA(aaInternalMetronome) * 1.5f;
+	}
+	*/
 
 	float fizzle_roll = zone->random.Real(0, 100);
 
@@ -2249,13 +2256,13 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, uint16 slot, uint16 
 		}
 	}
 
-	bool mgb = HasMGB() && spells[spell_id].can_mgb;
 	// if this was a spell slot or an ability use up the mana for it
 	if(slot != USE_ITEM_SPELL_SLOT && slot != POTION_BELT_SPELL_SLOT && slot != TARGET_RING_SPELL_SLOT && mana_used > 0)
 	{
 		mana_used = GetActSpellCost(spell_id, mana_used);
-		if (mgb) {
+		if (HasMGB() && spells[spell_id].can_mgb) {
 			mana_used *= 2;
+			SetMGB(false);
 		}
 		// clamp if we some how got focused above our current mana
 		if (GetMana() < mana_used)
@@ -2266,18 +2273,6 @@ bool Mob::SpellFinished(uint16 spell_id, Mob *spell_target, uint16 slot, uint16 
 			TryTriggerOnValueAmount(false, true);
 		}
 	}
-	// one may want to check if this is a disc or not, but we actually don't, there are non disc stuff that have end cost
-	// lets not consume end for custom items that have disc procs.
-	// One might also want to filter out USE_ITEM_SPELL_SLOT, but DISCIPLINE_SPELL_SLOT are both #defined to the same thing ...
-	if (spells[spell_id].EndurCost && !isproc) {
-		auto end_cost = spells[spell_id].EndurCost;
-		if (mgb)
-			end_cost *= 2;
-		SetEndurance(GetEndurance() - EQEmu::ClampUpper(end_cost, GetEndurance()));
-		TryTriggerOnValueAmount(false, false, true);
-	}
-	if (mgb)
-		SetMGB(false);
 
 	//set our reuse timer on long ass reuse_time spells...
 	if(IsClient() && !isproc)
@@ -2526,16 +2521,12 @@ void Mob::BardPulse(uint16 spell_id, Mob *caster) {
 			action->spell = spell_id;
 			action->sequence = (uint32) (GetHeading() * 2);	// just some random number
 			action->instrument_mod = caster->GetInstrumentMod(spell_id);
-			action->buff_unknown = 0;
 			action->level = buffs[buffs_i].casterlevel;
 			action->type = DamageTypeSpell;
 			entity_list.QueueCloseClients(this, packet, false, 200, 0, true, IsClient() ? FilterPCSpells : FilterNPCSpells);
 
-			action->buff_unknown = 4;
-
 			if(IsEffectInSpell(spell_id, SE_TossUp))
 			{
-				action->buff_unknown = 0;
 			}
 			else if(spells[spell_id].pushback > 0 || spells[spell_id].pushup > 0)
 			{
@@ -2544,8 +2535,6 @@ void Mob::BardPulse(uint16 spell_id, Mob *caster) {
 					if(!IsBuffSpell(spell_id))
 					{
 						CastToClient()->SetKnockBackExemption(true);
-
-						action->buff_unknown = 0;
 						EQApplicationPacket* outapp_push = new EQApplicationPacket(OP_ClientUpdate, sizeof(PlayerPositionUpdateServer_Struct));
 						PlayerPositionUpdateServer_Struct* spu = (PlayerPositionUpdateServer_Struct*)outapp_push->pBuffer;
 
@@ -2560,19 +2549,15 @@ void Mob::BardPulse(uint16 spell_id, Mob *caster) {
 						double new_y = spells[spell_id].pushback * cos(double(look_heading * 3.141592 / 180.0));
 
 						spu->spawn_id	= GetID();
-						spu->x_pos		= FloatToEQ19(GetX());
-						spu->y_pos		= FloatToEQ19(GetY());
-						spu->z_pos		= FloatToEQ19(GetZ());
-						spu->delta_x	= NewFloatToEQ13(new_x);
-						spu->delta_y	= NewFloatToEQ13(new_y);
-						spu->delta_z	= NewFloatToEQ13(spells[spell_id].pushup);
-						spu->heading	= FloatToEQ19(GetHeading());
-						spu->padding0002	=0;
-						spu->padding0006	=7;
-						spu->padding0014	=0x7f;
-						spu->padding0018	=0x5df27;
-						spu->animation = 0;
-						spu->delta_heading = NewFloatToEQ13(0);
+						spu->x_pos		= GetX();
+						spu->y_pos		= GetY();
+						spu->z_pos		= GetZ();
+						spu->delta_x	= (new_x);
+						spu->delta_y	= (new_y);
+						spu->delta_z	= (spells[spell_id].pushup);
+						spu->rotation	= GetHeading();
+						spu->animationspeed = 0;
+						spu->delta_heading = 0;
 						outapp_push->priority = 6;
 						entity_list.QueueClients(this, outapp_push, true);
 						CastToClient()->FastQueuePacket(&outapp_push);
@@ -3406,7 +3391,6 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 	action->spell = spell_id;
 	action->sequence = (uint32) (GetHeading() * 2);	// just some random number
 	action->instrument_mod = GetInstrumentMod(spell_id);
-	action->buff_unknown = 0;
 
 	if(spelltar != this && spelltar->IsClient())	// send to target
 		spelltar->CastToClient()->QueuePacket(action_packet);
@@ -3692,8 +3676,6 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 	// not all unresistable, so changing this to only check certain spells
 	if(IsResistableSpell(spell_id))
 	{
-		spelltar->BreakInvisibleSpells(); //Any detrimental spell cast on you will drop invisible (can be AOE, non damage ect).
-
 		if (IsCharmSpell(spell_id) || IsMezSpell(spell_id) || IsFearSpell(spell_id))
 			spell_effectiveness = spelltar->ResistSpell(spells[spell_id].resisttype, spell_id, this, use_resist_adjust, resist_adjust, true, false, false, level_override);
 		else
@@ -3727,22 +3709,12 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 					}
 				}
 
-				if (spelltar->IsClient()){
-					spelltar->CastToClient()->BreakSneakWhenCastOn(this, true);
-					spelltar->CastToClient()->BreakFeignDeathWhenCastOn(true);
-				}
-				
 				spelltar->CheckNumHitsRemaining(NumHit::IncomingSpells);
 				CheckNumHitsRemaining(NumHit::OutgoingSpells);
 
 				safe_delete(action_packet);
 				return false;
 			}
-		}
-
-		if (spelltar->IsClient()){
-			spelltar->CastToClient()->BreakSneakWhenCastOn(this, false);
-			spelltar->CastToClient()->BreakFeignDeathWhenCastOn(false);
 		}
 	}
 	else
@@ -3806,11 +3778,9 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 	// NOTE: this is what causes the buff icon to appear on the client, if
 	// this is a buff - but it sortof relies on the first packet.
 	// the complete sequence is 2 actions and 1 damage message
-	action->buff_unknown = 0x04;	// this is a success flag
 
 	if(IsEffectInSpell(spell_id, SE_TossUp))
 	{
-		action->buff_unknown = 0;
 	}
 	else if(spells[spell_id].pushback > 0 || spells[spell_id].pushup > 0)
 	{
@@ -3819,8 +3789,6 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 			if(!IsBuffSpell(spell_id))
 			{
 				spelltar->CastToClient()->SetKnockBackExemption(true);
-
-				action->buff_unknown = 0;
 				EQApplicationPacket* outapp_push = new EQApplicationPacket(OP_ClientUpdate, sizeof(PlayerPositionUpdateServer_Struct));
 				PlayerPositionUpdateServer_Struct* spu = (PlayerPositionUpdateServer_Struct*)outapp_push->pBuffer;
 
@@ -3835,19 +3803,15 @@ bool Mob::SpellOnTarget(uint16 spell_id, Mob *spelltar, bool reflect, bool use_r
 				double new_y = spells[spell_id].pushback * cos(double(look_heading * 3.141592 / 180.0));
 
 				spu->spawn_id	= spelltar->GetID();
-				spu->x_pos		= FloatToEQ19(spelltar->GetX());
-				spu->y_pos		= FloatToEQ19(spelltar->GetY());
-				spu->z_pos		= FloatToEQ19(spelltar->GetZ());
-				spu->delta_x	= NewFloatToEQ13(new_x);
-				spu->delta_y	= NewFloatToEQ13(new_y);
-				spu->delta_z	= NewFloatToEQ13(spells[spell_id].pushup);
-				spu->heading	= FloatToEQ19(spelltar->GetHeading());
-				spu->padding0002	=0;
-				spu->padding0006	=7;
-				spu->padding0014	=0x7f;
-				spu->padding0018	=0x5df27;
-				spu->animation = 0;
-				spu->delta_heading = NewFloatToEQ13(0);
+				spu->x_pos		= spelltar->GetX();
+				spu->y_pos		= spelltar->GetY();
+				spu->z_pos		= spelltar->GetZ();
+				spu->delta_x	= (new_x);
+				spu->delta_y	= (new_y);
+				spu->delta_z	= (spells[spell_id].pushup);
+				spu->rotation	= spelltar->GetHeading();
+				spu->animationspeed = 0;
+				spu->delta_heading = 0;
 				outapp_push->priority = 6;
 				entity_list.QueueClients(this, outapp_push, true);
 				spelltar->CastToClient()->FastQueuePacket(&outapp_push);
@@ -4084,7 +4048,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 			if(aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
-				AddToHateList(caster, 1,0,true,false,false,spell_id);
+				AddToHateList(caster, 1);
 			}
 			return true;
 		}
@@ -4111,7 +4075,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 		if(aggro > 0) {
 			AddToHateList(caster, aggro);
 		} else {
-			AddToHateList(caster, 1,0,true,false,false,spell_id);
+			AddToHateList(caster, 1);
 		}
 		return true;
 	}
@@ -4127,7 +4091,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 			if(aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
-				AddToHateList(caster, 1,0,true,false,false,spell_id);
+				AddToHateList(caster, 1);
 			}
 			return true;
 		} else if(IsClient() && caster->IsClient() && (caster->CastToClient()->GetGM() == false))
@@ -4144,7 +4108,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 			if (aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
-				AddToHateList(caster, 1,0,true,false,false,spell_id);
+				AddToHateList(caster, 1);
 			}
 			return true;
 		}
@@ -4167,7 +4131,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 			if(aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
-				AddToHateList(caster, 1,0,true,false,false,spell_id);
+				AddToHateList(caster, 1);
 			}
 			return true;
 		}
@@ -4207,7 +4171,7 @@ bool Mob::IsImmuneToSpell(uint16 spell_id, Mob *caster)
 			if(aggro > 0) {
 				AddToHateList(caster, aggro);
 			} else {
-				AddToHateList(caster, 1,0,true,false,false,spell_id);
+				AddToHateList(caster, 1);
 			}
 			return true;
 		}
@@ -4315,7 +4279,7 @@ float Mob::ResistSpell(uint8 resist_type, uint16 spell_id, Mob *caster, bool use
 	}
 
 	//Get the resist chance for the target
-	if(resist_type == RESIST_NONE || spells[spell_id].no_resist)
+	if(resist_type == RESIST_NONE)
 	{
 		Log.Out(Logs::Detail, Logs::Spells, "Spell was unresistable");
 		return 100;
@@ -4910,16 +4874,6 @@ void Client::UnmemSpell(int slot, bool update_client)
 	}
 }
 
-void Client::UnmemSpellBySpellID(int32 spell_id)
-{
-	for(int i = 0; i < MAX_PP_MEMSPELL; i++) {
-		if(m_pp.mem_spells[i] == spell_id) {
-			UnmemSpell(i, true);
-			break;
-		}
-	}
-}
-
 void Client::UnmemSpellAll(bool update_client)
 {
 	int i;
@@ -5310,26 +5264,12 @@ void Client::SendBuffDurationPacket(Buffs_Struct &buff)
 	EQApplicationPacket* outapp;
 	outapp = new EQApplicationPacket(OP_Buff, sizeof(SpellBuffFade_Struct));
 	SpellBuffFade_Struct* sbf = (SpellBuffFade_Struct*) outapp->pBuffer;
-	int index;
 
 	sbf->entityid = GetID();
 	sbf->slot = 2;
 	sbf->spellid = buff.spellid;
 	sbf->slotid = 0;
 	sbf->level = buff.casterlevel > 0 ? buff.casterlevel : GetLevel();
-
-	// We really don't know what to send as sbf->effect.
-	// The code used to send level (and still does for cases we don't know)
-	//
-	// The fixes below address known issues with sending level in this field.
-	// Typically, when the packet is sent, or when the user
-	// next does something on the UI that causes an update (like opening a
-	// pack), the stats updated by the spell in question get corrupted.
-	// 
-	// The values were determined by trial and error.  I could not find a 
-	// pattern or find a field in spells_new that would work.
-
-	sbf->effect=sbf->level;
 
 	if (IsEffectInSpell(buff.spellid, SE_TotalHP))
 	{
@@ -5341,45 +5281,25 @@ void Client::SendBuffDurationPacket(Buffs_Struct &buff)
 	else if (IsEffectInSpell(buff.spellid, SE_CurrentHP))
 	{
 		// This is mostly a problem when we try and update duration on a
-		// dot or a hp->mana conversion.  Zero cancels the effect
-		// Sending teh actual change again seems to work.
-		index = GetSpellEffectIndex(buff.spellid, SE_CurrentHP);
+		// dot or a hp->mana conversion.  Zero cancels the effect, any
+		// other value has the GUI doing that value at the same time server
+		// is doing theirs.  This makes the two match.
+		int index = GetSpellEffectIndex(buff.spellid, SE_CurrentHP);
 		sbf->effect = abs(spells[buff.spellid].base[index]);
 	}
 	else if (IsEffectInSpell(buff.spellid, SE_SeeInvis))
 	{
-		// 10 seems to not break SeeInvis spells.  Level,
+		// Wish I knew what this sbf->effect field was trying to tell
+		// the client.  10 seems to not break SeeInvis spells.  Level,
 		// which is what the old client sends breaks the client at at 
 		// least level 9, maybe more.
 		sbf->effect = 10;
 	}
-	else if (IsEffectInSpell(buff.spellid, SE_ArmorClass) ||
-			 IsEffectInSpell(buff.spellid, SE_ResistFire) ||
-			 IsEffectInSpell(buff.spellid, SE_ResistCold) ||
-			 IsEffectInSpell(buff.spellid, SE_ResistPoison) ||
-			 IsEffectInSpell(buff.spellid, SE_ResistDisease) ||
-			 IsEffectInSpell(buff.spellid, SE_ResistMagic) ||
-			 IsEffectInSpell(buff.spellid, SE_STR) ||
-			 IsEffectInSpell(buff.spellid, SE_STA) ||
-			 IsEffectInSpell(buff.spellid, SE_DEX) ||
-			 IsEffectInSpell(buff.spellid, SE_WIS) ||
-			 IsEffectInSpell(buff.spellid, SE_INT) ||
-			 IsEffectInSpell(buff.spellid, SE_AGI))
+	else
 	{
-		// This seems to work.  Previosly stats got corrupted when sending
-		// level.
-		sbf->effect = 46;
-	}
-	else if (IsEffectInSpell(buff.spellid, SE_CHA))
-	{
-		index = GetSpellEffectIndex(buff.spellid, SE_CHA);
-		sbf->effect = abs(spells[buff.spellid].base[index]);
-		// Only use this valie if its not a spacer.
-		if (sbf->effect != 0)
-		{
-			// Same as other stats, need this to prevent a double update.
-			sbf->effect = 46;
-		}
+		// Default to what old code did until we find a better fix for
+		// other spell lines.
+		sbf->effect=sbf->level;
 	}
 
 	sbf->bufffade = 0;

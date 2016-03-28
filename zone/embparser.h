@@ -75,7 +75,6 @@ public:
 	virtual std::string GetVar(std::string name);
 	virtual void ReloadQuests();
 	virtual uint32 GetIdentifier() { return 0xf8b05c11; }
-
 private:
 	Embperl *perl;
 	

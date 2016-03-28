@@ -182,7 +182,6 @@
 #define ServerOP_CZMessagePlayer 0x4008
 #define ServerOP_ReloadWorld 0x4009
 #define ServerOP_ReloadLogs 0x4010
-#define ServerOP_ReloadPerlExportSettings	0x4011
 /* Query Server OP Codes */
 #define ServerOP_QSPlayerLogTrades					0x5010
 #define ServerOP_QSPlayerLogHandins					0x5011
@@ -532,7 +531,7 @@ struct ServerLSPlayerZoneChange_Struct {
 	uint32 from; // 0 = world
 	uint32 to; // 0 = world
 };
-struct ClientAuth_Struct {
+struct ServerLSClientAuth {
 	uint32	lsaccount_id;	// ID# in login server's db
 	char	name[30];		// username in login server's db
 	char	key[30];		// the Key the client will present
@@ -558,7 +557,6 @@ struct ServerConnectInfo {
 	char	address[250];
 	char	local_address[250];
 	uint16	port;
-	uint32  process_id;
 };
 
 struct ServerGMGoto_Struct {

@@ -1511,8 +1511,10 @@ EQRawApplicationPacket *p=nullptr;
 	}
 	MInQueue.unlock();
 	
-	p->SetOpcode((EmuOpcode)p->opcode);
-
+	if(p)
+	{
+		p->SetOpcode((EmuOpcode)p->opcode);
+	}
 	return p;
 }
 
@@ -1594,6 +1596,7 @@ void EQWebStream::ProcessPacket(uint16 opcode, const unsigned char* data, uint32
 	{
 		MInQueue.lock();
 		InQueue.push_back(ap);
+		SetLastPacketTime(Timer::GetCurrentTime());
 		MInQueue.unlock();
 	}
 }
@@ -1607,7 +1610,7 @@ EQStream::MatchState EQWebStream::CheckSignature(const EQStream::Signature *sig,
 	if (!InQueue.empty()) {
 		//this is already getting hackish...
 		p = InQueue.front();
-		if(sig->ignore_eq_opcode != 0 && p->opcode == pOpcodeMgr->EQToEmu(sig->ignore_eq_opcode)) {
+		if(sig->ignore_eq_opcode != 0 && p->opcode == sig->ignore_eq_opcode) {
 			if(InQueue.size() > 1) {
 				p = InQueue[1];
 			} else {
@@ -1616,7 +1619,7 @@ EQStream::MatchState EQWebStream::CheckSignature(const EQStream::Signature *sig,
 		}
 		if(p == nullptr) {
 			//first opcode is ignored, and nothing else remains... keep waiting
-		} else if(p->opcode == pOpcodeMgr->EQToEmu(sig->first_eq_opcode)) {
+		} else if(p->opcode == sig->first_eq_opcode) {
 			//opcode matches, check length..
 			if(p->size == sig->first_length) {
 				Log.Out(Logs::General, Logs::Netcode, "[IDENT_TRACE] %s:%d: First opcode matched 0x%x and length matched %d", long2ip(GetRemoteIP()).c_str(), ntohs(GetRemotePort()), sig->first_eq_opcode, p->size);

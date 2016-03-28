@@ -847,7 +847,7 @@ int Mob::GetWeaponDamage(Mob *against, const Item_Struct *weapon_item) {
 		}
 		else{
 			if((GetClass() == MONK || GetClass() == BEASTLORD) && GetLevel() >= 30){
-				dmg = GetHandToHandDamage();
+				dmg = GetMonkHandToHandDamage();
 			}
 			else if(GetOwner() && GetLevel() >= RuleI(Combat, PetAttackMagicLevel)){
 				//pets wouldn't actually use this but...
@@ -869,7 +869,12 @@ int Mob::GetWeaponDamage(Mob *against, const Item_Struct *weapon_item) {
 			dmg = dmg <= 0 ? 1 : dmg;
 		}
 		else{
-			dmg = GetHandToHandDamage();
+			if(GetClass() == MONK || GetClass() == BEASTLORD){
+				dmg = GetMonkHandToHandDamage();
+			}
+			else{
+				dmg = 1;
+			}
 		}
 	}
 
@@ -1002,7 +1007,7 @@ int Mob::GetWeaponDamage(Mob *against, const ItemInst *weapon_item, uint32 *hate
 
 			if((GetClass() == MONK || GetClass() == BEASTLORD)) {
 				if(MagicGloves || GetLevel() >= 30){
-					dmg = GetHandToHandDamage();
+					dmg = GetMonkHandToHandDamage();
 					if (hate) *hate += dmg;
 				}
 			}
@@ -1037,8 +1042,13 @@ int Mob::GetWeaponDamage(Mob *against, const ItemInst *weapon_item, uint32 *hate
 			}
 		}
 		else{
-			dmg = GetHandToHandDamage();
-			if (hate) *hate += dmg;
+			if(GetClass() == MONK || GetClass() == BEASTLORD){
+				dmg = GetMonkHandToHandDamage();
+				if (hate) *hate += dmg;
+			}
+			else{
+				dmg = 1;
+			}
 		}
 	}
 
@@ -1373,7 +1383,7 @@ bool Client::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, b
 	if (damage > 0 && HasSkillProcSuccess() && other && other->GetHP() > 0)
 		TrySkillProc(other, skillinuse, 0, true, Hand);
 
-	CommonBreakInvisibleFromCombat();
+	CommonBreakInvisible();
 
 	if(GetTarget())
 		TriggerDefensiveProcs(weapon, other, Hand, damage);
@@ -1931,7 +1941,7 @@ bool NPC::Attack(Mob* other, int Hand, bool bRiposte, bool IsStrikethrough, bool
 
 	MeleeLifeTap(damage);
 
-	CommonBreakInvisibleFromCombat();
+	CommonBreakInvisible();
 
 	//I doubt this works...
 	if (!GetTarget())
@@ -2000,18 +2010,18 @@ void NPC::Damage(Mob* other, int32 damage, uint16 spell_id, SkillUseTypes attack
 	}
 }
 
-bool NPC::Death(Mob* killer_mob, int32 damage, uint16 spell, SkillUseTypes attack_skill) {
-	Log.Out(Logs::Detail, Logs::Combat, "Fatal blow dealt by %s with %d damage, spell %d, skill %d", killer_mob->GetName(), damage, spell, attack_skill);
+bool NPC::Death(Mob* killerMob, int32 damage, uint16 spell, SkillUseTypes attack_skill) {
+	Log.Out(Logs::Detail, Logs::Combat, "Fatal blow dealt by %s with %d damage, spell %d, skill %d", killerMob->GetName(), damage, spell, attack_skill);
 
 	bool MadeCorpse = false;
 	uint16 OrigEntID = this->GetID();
 
 	Mob *oos = nullptr;
-	if(killer_mob) {
-		oos = killer_mob->GetOwnerOrSelf();
+	if(killerMob) {
+		oos = killerMob->GetOwnerOrSelf();
 
 		char buffer[48] = { 0 };
-		snprintf(buffer, 47, "%d %d %d %d", killer_mob ? killer_mob->GetID() : 0, damage, spell, static_cast<int>(attack_skill));
+		snprintf(buffer, 47, "%d %d %d %d", killerMob ? killerMob->GetID() : 0, damage, spell, static_cast<int>(attack_skill));
 		if(parse->EventNPC(EVENT_DEATH, this, oos, buffer, 0) != 0)
 		{
 			if(GetHP() < 0) {
@@ -2020,15 +2030,15 @@ bool NPC::Death(Mob* killer_mob, int32 damage, uint16 spell, SkillUseTypes attac
 			return false;
 		}
 
-		if(killer_mob && killer_mob->IsClient() && (spell != SPELL_UNKNOWN) && damage > 0) {
+		if(killerMob && killerMob->IsClient() && (spell != SPELL_UNKNOWN) && damage > 0) {
 			char val1[20]={0};
 			entity_list.MessageClose_StringID(this, false, 100, MT_NonMelee, HIT_NON_MELEE,
-				killer_mob->GetCleanName(), GetCleanName(), ConvertArray(damage, val1));
+				killerMob->GetCleanName(), GetCleanName(), ConvertArray(damage, val1));
 		}
 	} else {
 
 		char buffer[48] = { 0 };
-		snprintf(buffer, 47, "%d %d %d %d", killer_mob ? killer_mob->GetID() : 0, damage, spell, static_cast<int>(attack_skill));
+		snprintf(buffer, 47, "%d %d %d %d", killerMob ? killerMob->GetID() : 0, damage, spell, static_cast<int>(attack_skill));
 		if(parse->EventNPC(EVENT_DEATH, this, nullptr, buffer, 0) != 0)
 		{
 			if(GetHP() < 0) {
@@ -2066,21 +2076,21 @@ bool NPC::Death(Mob* killer_mob, int32 damage, uint16 spell, SkillUseTypes attac
 	EQApplicationPacket* app= new EQApplicationPacket(OP_Death,sizeof(Death_Struct));
 	Death_Struct* d = (Death_Struct*)app->pBuffer;
 	d->spawn_id = GetID();
-	d->killer_id = killer_mob ? killer_mob->GetID() : 0;
+	d->killer_id = killerMob ? killerMob->GetID() : 0;
 	d->bindzoneid = 0;
 	d->spell_id = spell == SPELL_UNKNOWN ? 0xffffffff : spell;
 	d->attack_skill = SkillDamageTypes[attack_skill];
 	d->damage = damage;
 	app->priority = 6;
-	entity_list.QueueClients(killer_mob, app, false);
+	entity_list.QueueClients(killerMob, app, false);
 
 	if(respawn2) {
 		respawn2->DeathReset(1);
 	}
 
-	if (killer_mob) {
+	if (killerMob) {
 		if(GetClass() != LDON_TREASURE)
-			hate_list.AddEntToHateList(killer_mob, damage);
+			hate_list.AddEntToHateList(killerMob, damage);
 	}
 
 	safe_delete(app);
@@ -2142,8 +2152,8 @@ bool NPC::Death(Mob* killer_mob, int32 damage, uint16 spell, SkillUseTypes attac
 		{
 			if(!IsLdonTreasure && MerchantType == 0) {
 				kr->SplitExp((finalxp), this);
-				if(killer_mob && (kr->IsRaidMember(killer_mob->GetName()) || kr->IsRaidMember(killer_mob->GetUltimateOwner()->GetName())))
-					killer_mob->TrySpellOnKill(killed_level,spell);
+				if(killerMob && (kr->IsRaidMember(killerMob->GetName()) || kr->IsRaidMember(killerMob->GetUltimateOwner()->GetName())))
+					killerMob->TrySpellOnKill(killed_level,spell);
 			}
 			/* Send the EVENT_KILLED_MERIT event for all raid members */
 			for (int i = 0; i < MAX_RAID_MEMBERS; i++) {
@@ -2187,8 +2197,8 @@ bool NPC::Death(Mob* killer_mob, int32 damage, uint16 spell, SkillUseTypes attac
 		{
 			if(!IsLdonTreasure && MerchantType == 0) {
 				kg->SplitExp((finalxp), this);
-				if(killer_mob && (kg->IsGroupMember(killer_mob->GetName()) || kg->IsGroupMember(killer_mob->GetUltimateOwner()->GetName())))
-					killer_mob->TrySpellOnKill(killed_level,spell);
+				if(killerMob && (kg->IsGroupMember(killerMob->GetName()) || kg->IsGroupMember(killerMob->GetUltimateOwner()->GetName())))
+					killerMob->TrySpellOnKill(killed_level,spell);
 			}
 			/* Send the EVENT_KILLED_MERIT event and update kill tasks
 			* for all group members */
@@ -2238,8 +2248,8 @@ bool NPC::Death(Mob* killer_mob, int32 damage, uint16 spell, SkillUseTypes attac
 					if(!GetOwner() || (GetOwner() && !GetOwner()->IsClient()))
 					{
 						give_exp_client->AddEXP((finalxp), conlevel);
-						if(killer_mob && (killer_mob->GetID() == give_exp_client->GetID() || killer_mob->GetUltimateOwner()->GetID() == give_exp_client->GetID()))
-							killer_mob->TrySpellOnKill(killed_level,spell);
+						if(killerMob && (killerMob->GetID() == give_exp_client->GetID() || killerMob->GetUltimateOwner()->GetID() == give_exp_client->GetID()))
+							killerMob->TrySpellOnKill(killed_level,spell);
 					}
 				}
 			}
@@ -2397,34 +2407,25 @@ bool NPC::Death(Mob* killer_mob, int32 damage, uint16 spell, SkillUseTypes attac
 			uint16 emoteid = oos->GetEmoteID();
 			if(emoteid != 0)
 				oos->CastToNPC()->DoNPCEmote(KILLEDNPC, emoteid);
-			killer_mob->TrySpellOnKill(killed_level, spell);
+			killerMob->TrySpellOnKill(killed_level, spell);
 		}
 	}
 
 	WipeHateList();
 	p_depop = true;
-	if(killer_mob && killer_mob->GetTarget() == this) //we can kill things without having them targeted
-		killer_mob->SetTarget(nullptr); //via AE effects and such..
+	if(killerMob && killerMob->GetTarget() == this) //we can kill things without having them targeted
+		killerMob->SetTarget(nullptr); //via AE effects and such..
 
 	entity_list.UpdateFindableNPCState(this, true);
 
 	char buffer[48] = { 0 };
-	snprintf(buffer, 47, "%d %d %d %d", killer_mob ? killer_mob->GetID() : 0, damage, spell, static_cast<int>(attack_skill));
+	snprintf(buffer, 47, "%d %d %d %d", killerMob ? killerMob->GetID() : 0, damage, spell, static_cast<int>(attack_skill));
 	parse->EventNPC(EVENT_DEATH_COMPLETE, this, oos, buffer, 0);
-
-	/* Zone controller process EVENT_DEATH_ZONE (Death events) */
-	if (RuleB(Zone, UseZoneController)) {
-		if (entity_list.GetNPCByNPCTypeID(ZONE_CONTROLLER_NPC_ID) && this->GetNPCTypeID() != ZONE_CONTROLLER_NPC_ID){
-			char data_pass[100] = { 0 };
-			snprintf(data_pass, 99, "%d %d %d %d %d", killer_mob ? killer_mob->GetID() : 0, damage, spell, static_cast<int>(attack_skill), this->GetNPCTypeID());
-			parse->EventNPC(EVENT_DEATH_ZONE, entity_list.GetNPCByNPCTypeID(ZONE_CONTROLLER_NPC_ID)->CastToNPC(), nullptr, data_pass, 0);
-		}
-	}
-
+	
 	return true;
 }
 
-void Mob::AddToHateList(Mob* other, uint32 hate /*= 0*/, int32 damage /*= 0*/, bool iYellForHelp /*= true*/, bool bFrenzy /*= false*/, bool iBuffTic /*= false*/, uint16 spell_id)
+void Mob::AddToHateList(Mob* other, uint32 hate /*= 0*/, int32 damage /*= 0*/, bool iYellForHelp /*= true*/, bool bFrenzy /*= false*/, bool iBuffTic /*= false*/)
 {
 	if(!other)
 		return;
@@ -2435,11 +2436,6 @@ void Mob::AddToHateList(Mob* other, uint32 hate /*= 0*/, int32 damage /*= 0*/, b
 	if(damage < 0){
 		hate = 1;
 	}
-
-	if (iYellForHelp)
-		SetPrimaryAggro(true);
-	else
-		SetAssistAggro(true);
 
 	bool wasengaged = IsEngaged();
 	Mob* owner = other->GetOwner();
@@ -2483,9 +2479,6 @@ void Mob::AddToHateList(Mob* other, uint32 hate /*= 0*/, int32 damage /*= 0*/, b
 		return;
 
 	if(IsFamiliar() || GetSpecialAbility(IMMUNE_AGGRO))
-		return;
-
-	if (spell_id != SPELL_UNKNOWN && NoDetrimentalSpellAggro(spell_id))
 		return;
 
 	if (other == myowner)
@@ -2707,140 +2700,82 @@ uint8 Mob::GetWeaponDamageBonus(const Item_Struct *weapon, bool offhand)
 		}
 	} else {
 		// 2h damage bonus
-		int damage_bonus = 1 + (level - 28) / 3;
 		if (delay <= 27)
-			return damage_bonus + 1;
-		// Client isn't reflecting what the dev quoted, this matches better
-		if (level > 29) {
-			int level_bonus = (level - 30) / 5 + 1;
-			if (level > 50) {
-				level_bonus++;
-				int level_bonus2 = level - 50;
-				if (level > 67)
-					level_bonus2 += 5;
-				else if (level > 59)
-					level_bonus2 += 4;
-				else if (level > 58)
-					level_bonus2 += 3;
-				else if (level > 56)
-					level_bonus2 += 2;
-				else if (level > 54)
-					level_bonus2++;
-				level_bonus += level_bonus2 * delay / 40;
-			}
-			damage_bonus += level_bonus;
-		}
-		if (delay >= 40) {
-			int delay_bonus = (delay - 40) / 3 + 1;
-			if (delay >= 45)
-				delay_bonus += 2;
-			else if (delay >= 43)
-				delay_bonus++;
-			damage_bonus += delay_bonus;
-		}
-		return damage_bonus;
+			return 1 + ((level - 28) / 3);
+		else if (delay < 40)
+			return 1 + ((level - 28) / 3) + ((level - 30) / 5);
+		else if (delay < 43)
+			return 2 + ((level - 28) / 3) + ((level - 30) / 5) + ((delay - 40) / 3);
+		else if (delay < 45)
+			return 3 + ((level - 28) / 3) + ((level - 30) / 5) + ((delay - 40) / 3);
+		else if (delay >= 45)
+			return 4 + ((level - 28) / 3) + ((level - 30) / 5) + ((delay - 40) / 3);
 	}
 }
 
-int Mob::GetHandToHandDamage(void)
+int Mob::GetMonkHandToHandDamage(void)
 {
-	if (RuleB(Combat, UseRevampHandToHand)) {
-		// everyone uses this in the revamp!
-		int skill = GetSkill(SkillHandtoHand);
-		int epic = 0;
-		if (IsClient() && CastToClient()->GetItemIDAt(12) == 10652 && GetLevel() > 46)
-			epic = 280;
-		if (epic > skill)
-			skill = epic;
-		return skill / 15 + 3;
-	}
+	// Kaiyodo - Determine a monk's fist damage. Table data from www.monkly-business.com
+	// saved as static array - this should speed this function up considerably
+	static int damage[66] = {
+	// 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19
+		99, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7,
+		 8, 8, 8, 8, 8, 9, 9, 9, 9, 9,10,10,10,10,10,11,11,11,11,11,
+		12,12,12,12,12,13,13,13,13,13,14,14,14,14,14,14,14,14,14,14,
+		14,14,15,15,15,15 };
 
-	static uint8 mnk_dmg[] = {99,
-				4, 4, 4, 4, 5, 5, 5, 5, 5, 6,           // 1-10
-				6, 6, 6, 6, 7, 7, 7, 7, 7, 8,           // 11-20
-				8, 8, 8, 8, 9, 9, 9, 9, 9, 10,          // 21-30
-				10, 10, 10, 10, 11, 11, 11, 11, 11, 12, // 31-40
-				12, 12, 12, 12, 13, 13, 13, 13, 13, 14, // 41-50
-				14, 14, 14, 14, 14, 14, 14, 14, 14, 14, // 51-60
-				14, 14};                                // 61-62
-	static uint8 bst_dmg[] = {99,
-				4, 4, 4, 4, 4, 5, 5, 5, 5, 5,        // 1-10
-				5, 6, 6, 6, 6, 6, 6, 7, 7, 7,        // 11-20
-				7, 7, 7, 8, 8, 8, 8, 8, 8, 9,        // 21-30
-				9, 9, 9, 9, 9, 10, 10, 10, 10, 10,   // 31-40
-				10, 11, 11, 11, 11, 11, 11, 12, 12}; // 41-49
-	if (GetClass() == MONK) {
-		if (IsClient() && CastToClient()->GetItemIDAt(12) == 10652 && GetLevel() > 50)
-			return 9;
-		if (level > 62)
-			return 15;
-		return mnk_dmg[level];
-	} else if (GetClass() == BEASTLORD) {
-		if (level > 49)
-			return 13;
-		return bst_dmg[level];
+	// Have a look to see if we have epic fists on
+
+	if (IsClient() && CastToClient()->GetItemIDAt(12) == 10652)
+		return(9);
+	else
+	{
+		int Level = GetLevel();
+		if (Level > 65)
+			return(19);
+		else
+			return damage[Level];
 	}
-	return 2;
 }
 
-int Mob::GetHandToHandDelay(void)
+int Mob::GetMonkHandToHandDelay(void)
 {
-	if (RuleB(Combat, UseRevampHandToHand)) {
-		// everyone uses this in the revamp!
-		int skill = GetSkill(SkillHandtoHand);
-		int epic = 0;
-		int iksar = 0;
-		if (IsClient() && CastToClient()->GetItemIDAt(12) == 10652 && GetLevel() > 46)
-			epic = 280;
-		else if (GetRace() == IKSAR)
-			iksar = 1;
-		if (epic > skill)
-			skill = epic;
-		return iksar - skill / 21 + 38;
-	}
+	// Kaiyodo - Determine a monk's fist delay. Table data from www.monkly-business.com
+	// saved as static array - this should speed this function up considerably
+	static int delayshuman[66] = {
+	//  0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19
+		99,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,
+		36,36,36,36,36,35,35,35,35,35,34,34,34,34,34,33,33,33,33,33,
+		32,32,32,32,32,31,31,31,31,31,30,30,30,29,29,29,28,28,28,27,
+		26,24,22,20,20,20  };
+	static int delaysiksar[66] = {
+	//  0  1  2  3  4  5  6  7  8  9  10 11 12 13 14 15 16 17 18 19
+		99,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,36,
+		36,36,36,36,36,36,36,36,36,36,35,35,35,35,35,34,34,34,34,34,
+		33,33,33,33,33,32,32,32,32,32,31,31,31,30,30,30,29,29,29,28,
+		27,24,22,20,20,20 };
 
-	int delay = 35;
-	static uint8 mnk_hum_delay[] = {99,
-				35, 35, 35, 35, 35, 35, 35, 35, 35, 35, // 1-10
-				35, 35, 35, 35, 35, 35, 35, 35, 35, 35, // 11-20
-				35, 35, 35, 35, 35, 35, 35, 34, 34, 34, // 21-30
-				34, 33, 33, 33, 33, 32, 32, 32, 32, 31, // 31-40
-				31, 31, 31, 30, 30, 30, 30, 29, 29, 29, // 41-50
-				29, 28, 28, 28, 28, 27, 27, 27, 27, 26, // 51-60
-				24, 22};                                // 61-62
-	static uint8 mnk_iks_delay[] = {99,
-				35, 35, 35, 35, 35, 35, 35, 35, 35, 35, // 1-10
-				35, 35, 35, 35, 35, 35, 35, 35, 35, 35, // 11-20
-				35, 35, 35, 35, 35, 35, 35, 35, 35, 34, // 21-30
-				34, 34, 34, 34, 34, 33, 33, 33, 33, 33, // 31-40
-				33, 32, 32, 32, 32, 32, 32, 31, 31, 31, // 41-50
-				31, 31, 31, 30, 30, 30, 30, 30, 30, 29, // 51-60
-				25, 23};                                // 61-62
-	static uint8 bst_delay[] = {99,
-				35, 35, 35, 35, 35, 35, 35, 35, 35, 35, // 1-10
-				35, 35, 35, 35, 35, 35, 35, 35, 35, 35, // 11-20
-				35, 35, 35, 35, 35, 35, 35, 35, 34, 34, // 21-30
-				34, 34, 34, 33, 33, 33, 33, 33, 32, 32, // 31-40
-				32, 32, 32, 31, 31, 31, 31, 31, 30, 30, // 41-50
-				30, 30, 30, 29, 29, 29, 29, 29, 28, 28, // 51-60
-				28, 28, 28, 27, 27, 27, 27, 27, 26, 26, // 61-70
-				26, 26, 26};                            // 71-73
-
-	if (GetClass() == MONK) {
-		// Have a look to see if we have epic fists on
-		if (IsClient() && CastToClient()->GetItemIDAt(12) == 10652 && GetLevel() > 50)
-			return 16;
-		int level = GetLevel();
-		if (level > 62)
-			return GetRace() == IKSAR ? 21 : 20;
-		return GetRace() == IKSAR ? mnk_iks_delay[level] : mnk_hum_delay[level];
-	} else if (GetClass() == BEASTLORD) {
-		int level = GetLevel();
-		if (level > 73)
-			return 25;
-		return bst_delay[level];
+	// Have a look to see if we have epic fists on
+	if (IsClient() && CastToClient()->GetItemIDAt(12) == 10652)
+		return(16);
+	else
+	{
+		int Level = GetLevel();
+		if (GetRace() == HUMAN)
+		{
+			if (Level > 65)
+				return(24);
+			else
+				return delayshuman[Level];
+		}
+		else	//heko: iksar table
+		{
+			if (Level > 65)
+				return(25);
+			else
+				return delaysiksar[Level];
+		}
 	}
-	return 35;
 }
 
 int32 Mob::ReduceDamage(int32 damage)
@@ -3219,15 +3154,15 @@ void Mob::CommonDamage(Mob* attacker, int32 &damage, const uint16 spell_id, cons
 			if(!RuleB(Combat, EXPFromDmgShield)) {
 			// Damage shield damage shouldn't count towards who gets EXP
 				if(!attacker->CastToClient()->GetFeigned() && !FromDamageShield)
-					AddToHateList(attacker, 0, damage, true, false, iBuffTic, spell_id);
+					AddToHateList(attacker, 0, damage, true, false, iBuffTic);
 			}
 			else {
 				if(!attacker->CastToClient()->GetFeigned())
-					AddToHateList(attacker, 0, damage, true, false, iBuffTic, spell_id);
+					AddToHateList(attacker, 0, damage, true, false, iBuffTic);
 			}
 		}
 		else
-			AddToHateList(attacker, 0, damage, true, false, iBuffTic, spell_id);
+			AddToHateList(attacker, 0, damage, true, false, iBuffTic);
 	}
 
 	if(damage > 0) {
@@ -3252,7 +3187,7 @@ void Mob::CommonDamage(Mob* attacker, int32 &damage, const uint16 spell_id, cons
 		{
 			if (!pet->IsHeld()) {
 				Log.Out(Logs::Detail, Logs::Aggro, "Sending pet %s into battle due to attack.", pet->GetName());
-				pet->AddToHateList(attacker, 1,0, true, false, false, spell_id);
+				pet->AddToHateList(attacker, 1);
 				pet->SetTarget(attacker);
 				Message_StringID(10, PET_ATTACKING, pet->GetCleanName(), attacker->GetCleanName());
 			}
@@ -4564,7 +4499,7 @@ void Mob::CommonOutgoingHitSuccess(Mob* defender, int32 &damage, SkillUseTypes s
 	CheckNumHitsRemaining(NumHit::OutgoingHitSuccess);
 }
 
-void Mob::CommonBreakInvisibleFromCombat()
+void Mob::CommonBreakInvisible()
 {
 	//break invis when you attack
 	if(invisible) {
@@ -4689,27 +4624,28 @@ void Client::SetAttackTimer()
 
 		int hhe = itembonuses.HundredHands + spellbonuses.HundredHands;
 		int speed = 0;
-		int delay = 3500;
+		int delay = 36;
+		float quiver_haste = 0.0f;
 
 		//if we have no weapon..
-		if (ItemToUse == nullptr)
-			delay = 100 * GetHandToHandDelay();
-		else
-			//we have a weapon, use its delay
-			delay = 100 * ItemToUse->Delay;
-
-		speed = delay / haste_mod;
-
-		if (ItemToUse && ItemToUse->ItemType == ItemTypeBow) {
-			// Live actually had a bug here where they would return the non-modified attack speed
-			// rather than the cap ...
-			speed = std::max(speed - GetQuiverHaste(speed), RuleI(Combat, QuiverHasteCap));
+		if (ItemToUse == nullptr) {
+			//above checks ensure ranged weapons do not fall into here
+			// Work out if we're a monk
+			if (GetClass() == MONK || GetClass() == BEASTLORD)
+				delay = GetMonkHandToHandDelay();
 		} else {
-			if (RuleB(Spells, Jun182014HundredHandsRevamp))
-				speed = static_cast<int>(speed + ((hhe / 1000.0f) * speed));
-			else
-				speed = static_cast<int>(speed + ((hhe / 100.0f) * delay));
+			//we have a weapon, use its delay
+			delay = ItemToUse->Delay;
+			if (ItemToUse->ItemType == ItemTypeBow || ItemToUse->ItemType == ItemTypeLargeThrowing)
+				quiver_haste = GetQuiverHaste();
 		}
+		if (RuleB(Spells, Jun182014HundredHandsRevamp))
+			speed = static_cast<int>(((delay / haste_mod) + ((hhe / 1000.0f) * (delay / haste_mod))) * 100);
+		else
+			speed = static_cast<int>(((delay / haste_mod) + ((hhe / 100.0f) * delay)) * 100);
+		// this is probably wrong
+		if (quiver_haste > 0)
+			speed *= quiver_haste;
 		TimerToUse->SetAtTrigger(std::max(RuleI(Combat, MinHastedDelay), speed), true, true);
 	}
 }
@@ -4839,15 +4775,8 @@ void Mob::DoMainHandAttackRounds(Mob *target, ExtraAttackOptions *opts, int spec
 		// A "quad" on live really is just a successful dual wield where both double attack
 		// The mobs that could triple lost the ability to when the triple attack skill was added in
 		Attack(target, MainPrimary, false, false, false, opts, special);
-		if (CanThisClassDoubleAttack() && CheckDoubleAttack()){
+		if (CanThisClassDoubleAttack() && CheckDoubleAttack())
 			Attack(target, MainPrimary, false, false, false, opts, special);
-								
-			if ((IsPet() || IsTempPet()) && IsPetOwnerClient()){
-				int chance = spellbonuses.PC_Pet_Flurry + itembonuses.PC_Pet_Flurry + aabonuses.PC_Pet_Flurry;
-				if (chance && zone->random.Roll(chance))
-					Flurry(nullptr);
-			}
-		}
 		return;
 	}
 
@@ -4897,15 +4826,8 @@ void Mob::DoOffHandAttackRounds(Mob *target, ExtraAttackOptions *opts, int speci
 	    GetEquipment(MaterialSecondary) != 0) {
 		if (CheckDualWield()) {
 			Attack(target, MainSecondary, false, false, false, opts, special);
-			if (CanThisClassDoubleAttack() && GetLevel() > 35 && CheckDoubleAttack()){
+			if (CanThisClassDoubleAttack() && GetLevel() > 35 && CheckDoubleAttack())
 				Attack(target, MainSecondary, false, false, false, opts, special);
-
-				if ((IsPet() || IsTempPet()) && IsPetOwnerClient()){
-					int chance = spellbonuses.PC_Pet_Flurry + itembonuses.PC_Pet_Flurry + aabonuses.PC_Pet_Flurry;
-					if (chance && zone->random.Roll(chance))
-						Flurry(nullptr);
-				}
-			}
 		}
 	}
 }

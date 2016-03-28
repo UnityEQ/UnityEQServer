@@ -85,6 +85,7 @@ class EQEmuConfig : public XMLParser
 		// From <files/>
 		std::string SpellsFile;
 		std::string OpCodesFile;
+		std::string EQTimeFile;
 
 		// From <directories/>
 		std::string MapDir;
@@ -159,6 +160,7 @@ class EQEmuConfig : public XMLParser
 			// Files
 			SpellsFile = "spells_us.txt";
 			OpCodesFile = "opcodes.conf";
+			EQTimeFile = "eqtime.cfg";
 			// Dirs
 			MapDir = "Maps";
 			QuestDir = "quests";

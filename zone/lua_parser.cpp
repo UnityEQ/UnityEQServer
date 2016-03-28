@@ -117,9 +117,7 @@ const char *LuaEvents[_LargestEventID] = {
 	"event_respawn",
 	"event_death_complete",
 	"event_unhandled_opcode",
-	"event_tick",
-	"event_spawn_zone",
-	"event_death_zone"
+	"event_tick"
 };
 
 extern Zone *zone;

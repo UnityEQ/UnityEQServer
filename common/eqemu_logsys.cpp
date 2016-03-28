@@ -102,7 +102,6 @@ void EQEmuLogSys::LoadLogSettingsDefaults()
 	log_settings[Logs::UCS_Server].log_to_console = Logs::General;
 	log_settings[Logs::Crash].log_to_console = Logs::General;
 	log_settings[Logs::MySQLError].log_to_console = Logs::General;
-	log_settings[Logs::Login_Server].log_to_console = Logs::General;
 
 	/*	Declare process file names for log writing
 		If there is no process_file_name declared, no log file will be written, simply
@@ -117,7 +116,7 @@ void EQEmuLogSys::LoadLogSettingsDefaults()
 		platform_file_name = "ucs";
 	else if (EQEmuLogSys::log_platform == EQEmuExePlatform::ExePlatformLogin)
 		platform_file_name = "login";
-	else if (EQEmuLogSys::log_platform == EQEmuExePlatform::ExePlatformLaunch)
+	else if (EQEmuLogSys::log_platform == EQEmuExePlatform::ExePlatformLogin)
 		platform_file_name = "launcher";
 }
 

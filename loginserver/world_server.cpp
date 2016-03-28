@@ -16,13 +16,11 @@
 	Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 */
 #include "world_server.h"
+#include "error_log.h"
 #include "login_server.h"
 #include "login_structures.h"
-#include "config.h"
 
-#include "../common/eqemu_logsys.h"
-
-extern EQEmuLogSys Log;
+extern ErrorLog *server_log;
 extern LoginServer server;
 
 WorldServer::WorldServer(EmuTCPConnection *c)
@@ -30,18 +28,19 @@ WorldServer::WorldServer(EmuTCPConnection *c)
 	connection = c;
 	zones_booted = 0;
 	players_online = 0;
-	server_status = 0;
+	status = 0;
 	runtime_id = 0;
 	server_list_id = 0;
 	server_type = 0;
-	is_server_authorized = false;
-	is_server_trusted = false;
-	is_server_logged_in = false;
+	authorized = false;
+	trusted = false;
+	logged_in = false;
 }
 
 WorldServer::~WorldServer()
 {
-	if(connection) {
+	if(connection)
+	{
 		connection->Free();
 	}
 }
@@ -50,12 +49,12 @@ void WorldServer::Reset()
 {
 	zones_booted = 0;
 	players_online = 0;
-	server_status = 0;
+	status = 0;
 	runtime_id;
 	server_list_id = 0;
 	server_type = 0;
-	is_server_authorized = false;
-	is_server_logged_in = false;
+	authorized = false;
+	logged_in = false;
 }
 
 bool WorldServer::Process()
@@ -65,7 +64,7 @@ bool WorldServer::Process()
 	{
 		if(server.options.IsWorldTraceOn())
 		{
-			Log.Out(Logs::General, Logs::Netcode, "Application packet received from server: 0x%.4X, (size %u)", app->opcode, app->size);
+			server_log->Log(log_network_trace, "Application packet received from server: 0x%.4X, (size %u)", app->opcode, app->size);
 		}
 
 		if(server.options.IsDumpInPacketsOn())
@@ -79,14 +78,14 @@ bool WorldServer::Process()
 			{
 				if(app->size < sizeof(ServerNewLSInfo_Struct))
 				{
-					Log.Out(Logs::General, Logs::Error, "Received application packet from server that had opcode ServerOP_NewLSInfo, "
+					server_log->Log(log_network_error, "Received application packet from server that had opcode ServerOP_NewLSInfo, "
 						"but was too small. Discarded to avoid buffer overrun.");
 					break;
 				}
 
 				if(server.options.IsWorldTraceOn())
 				{
-					Log.Out(Logs::General, Logs::Netcode, "New Login Info Recieved.");
+					server_log->Log(log_network_trace, "New Login Info Recieved.");
 				}
 
 				ServerNewLSInfo_Struct *info = (ServerNewLSInfo_Struct*)app->pBuffer;
@@ -97,14 +96,14 @@ bool WorldServer::Process()
 			{
 				if(app->size < sizeof(ServerLSStatus_Struct))
 				{
-					Log.Out(Logs::General, Logs::Error, "Recieved application packet from server that had opcode ServerOP_LSStatus, "
+					server_log->Log(log_network_error, "Recieved application packet from server that had opcode ServerOP_LSStatus, "
 						"but was too small. Discarded to avoid buffer overrun.");
 					break;
 				}
 
 				if(server.options.IsWorldTraceOn())
 				{
-					Log.Out(Logs::General, Logs::Netcode, "World Server Status Recieved.");
+					server_log->Log(log_network_trace, "World Server Status Recieved.");
 				}
 
 				ServerLSStatus_Struct *ls_status = (ServerLSStatus_Struct*)app->pBuffer;
@@ -128,7 +127,7 @@ bool WorldServer::Process()
 			{
 				if(app->size < sizeof(UsertoWorldResponse_Struct))
 				{
-					Log.Out(Logs::General, Logs::Error, "Recieved application packet from server that had opcode ServerOP_UsertoWorldResp, "
+					server_log->Log(log_network_error, "Recieved application packet from server that had opcode ServerOP_UsertoWorldResp, "
 						"but was too small. Discarded to avoid buffer overrun.");
 					break;
 				}
@@ -138,22 +137,21 @@ bool WorldServer::Process()
 				//While keeping world server spam with multiple servers connected almost impossible.
 				if(server.options.IsTraceOn())
 				{
-					Log.Out(Logs::General, Logs::Netcode, "User-To-World Response received.");
+					server_log->Log(log_network_trace, "User-To-World Response received.");
 				}
 
 				UsertoWorldResponse_Struct *utwr = (UsertoWorldResponse_Struct*)app->pBuffer;
-				Log.Out(Logs::General, Logs::Debug, "Trying to find client with user id of %u.", utwr->lsaccountid);
-				Client *c = server.client_manager->GetClient(utwr->lsaccountid);
+				server_log->Log(log_client, "Trying to find client with user id of %u.", utwr->lsaccountid);
+				Client *c = server.CM->GetClient(utwr->lsaccountid);
 				if(c)
 				{
-					Log.Out(Logs::General, Logs::Debug, "Found client with user id of %u and account name of %s.", utwr->lsaccountid, c->GetAccountName().c_str());
+					server_log->Log(log_client, "Found client with user id of %u and account name of %s.", utwr->lsaccountid, c->GetAccountName().c_str());
 					EQApplicationPacket *outapp = new EQApplicationPacket(OP_PlayEverquestResponse, sizeof(PlayEverquestResponse_Struct));
 					PlayEverquestResponse_Struct *per = (PlayEverquestResponse_Struct*)outapp->pBuffer;
 					per->Sequence = c->GetPlaySequence();
 					per->ServerNumber = c->GetPlayServerID();
-					Log.Out(Logs::General, Logs::Debug, "Found sequence and play of %u %u", c->GetPlaySequence(), c->GetPlayServerID());
-
-					Log.Out(Logs::General, Logs::Netcode, "[Size: %u] %s", outapp->size, DumpPacketToString(outapp).c_str());
+					server_log->Log(log_client, "Found sequence and play of %u %u", c->GetPlaySequence(), c->GetPlayServerID());
+					server_log->LogPacket(log_network_trace, (const char*)outapp->pBuffer, outapp->size);
 
 					if(utwr->response > 0)
 					{
@@ -182,9 +180,9 @@ bool WorldServer::Process()
 
 					if(server.options.IsTraceOn())
 					{
-						Log.Out(Logs::General, Logs::Netcode, "Sending play response with following data, allowed %u, sequence %u, server number %u, message %u",
+						server_log->Log(log_network_trace, "Sending play response with following data, allowed %u, sequence %u, server number %u, message %u",
 							per->Allowed, per->Sequence, per->ServerNumber, per->Message);
-						Log.Out(Logs::General, Logs::Netcode, "[Size: %u] %s", outapp->size, DumpPacketToString(outapp).c_str());
+						server_log->LogPacket(log_network_trace, (const char*)outapp->pBuffer, outapp->size);
 					}
 
 					if(server.options.IsDumpOutPacketsOn())
@@ -197,7 +195,7 @@ bool WorldServer::Process()
 				}
 				else
 				{
-					Log.Out(Logs::General, Logs::Error, "Recieved User-To-World Response for %u but could not find the client referenced!.", utwr->lsaccountid);
+					server_log->Log(log_client_error, "Recieved User-To-World Response for %u but could not find the client referenced!.", utwr->lsaccountid);
 				}
 				break;
 			}
@@ -205,16 +203,16 @@ bool WorldServer::Process()
 			{
 				if(app->size < sizeof(ServerLSAccountUpdate_Struct))
 				{
-					Log.Out(Logs::General, Logs::Error, "Recieved application packet from server that had opcode ServerLSAccountUpdate_Struct, "
+					server_log->Log(log_network_error, "Recieved application packet from server that had opcode ServerLSAccountUpdate_Struct, "
 						"but was too small. Discarded to avoid buffer overrun.");
 					break;
 				}
 			
-				Log.Out(Logs::General, Logs::Netcode, "ServerOP_LSAccountUpdate packet received from: %s", short_name.c_str());
+				server_log->Log(log_network_trace, "ServerOP_LSAccountUpdate packet received from: %s", short_name.c_str());
 				ServerLSAccountUpdate_Struct *lsau = (ServerLSAccountUpdate_Struct*)app->pBuffer;
-				if(is_server_trusted)
+				if(trusted)
 				{
-					Log.Out(Logs::General, Logs::Netcode, "ServerOP_LSAccountUpdate update processed for: %s", lsau->useraccount);
+					server_log->Log(log_network_trace, "ServerOP_LSAccountUpdate update processed for: %s", lsau->useraccount);
 					string name;
 					string password;
 					string email;
@@ -227,7 +225,7 @@ bool WorldServer::Process()
 			}
 		default:
 			{
-				Log.Out(Logs::General, Logs::Error, "Recieved application packet from server that had an unknown operation code 0x%.4X.", app->opcode);
+				server_log->Log(log_network_error, "Recieved application packet from server that had an unknown operation code 0x%.4X.", app->opcode);
 			}
 		}
 
@@ -239,9 +237,9 @@ bool WorldServer::Process()
 
 void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 {
-	if(is_server_logged_in)
+	if(logged_in)
 	{
-		Log.Out(Logs::General, Logs::Error, "WorldServer::Handle_NewLSInfo called but the login server was already marked as logged in, aborting.");
+		server_log->Log(log_network_error, "WorldServer::Handle_NewLSInfo called but the login server was already marked as logged in, aborting.");
 		return;
 	}
 
@@ -251,7 +249,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	}
 	else
 	{
-		Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, account name was too long.");
+		server_log->Log(log_network_error, "Handle_NewLSInfo error, account name was too long.");
 		return;
 	}
 
@@ -261,7 +259,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	}
 	else
 	{
-		Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, account password was too long.");
+		server_log->Log(log_network_error, "Handle_NewLSInfo error, account password was too long.");
 		return;
 	}
 
@@ -271,7 +269,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	}
 	else
 	{
-		Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, long name was too long.");
+		server_log->Log(log_network_error, "Handle_NewLSInfo error, long name was too long.");
 		return;
 	}
 
@@ -281,7 +279,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	}
 	else
 	{
-		Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, short name was too long.");
+		server_log->Log(log_network_error, "Handle_NewLSInfo error, short name was too long.");
 		return;
 	}
 
@@ -289,7 +287,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	{
 		if(strlen(i->local_address) == 0)
 		{
-			Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, local address was null, defaulting to localhost");
+			server_log->Log(log_network_error, "Handle_NewLSInfo error, local address was null, defaulting to localhost");
 			local_ip = "127.0.0.1";
 		}
 		else
@@ -299,7 +297,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	}
 	else
 	{
-		Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, local address was too long.");
+		server_log->Log(log_network_error, "Handle_NewLSInfo error, local address was too long.");
 		return;
 	}
 
@@ -310,7 +308,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 			in_addr in;
 			in.s_addr = GetConnection()->GetrIP();
 			remote_ip = inet_ntoa(in);
-			Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, remote address was null, defaulting to stream address %s.", remote_ip.c_str());
+			server_log->Log(log_network_error, "Handle_NewLSInfo error, remote address was null, defaulting to stream address %s.", remote_ip.c_str());
 		}
 		else
 		{
@@ -322,7 +320,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 		in_addr in;
 		in.s_addr = GetConnection()->GetrIP();
 		remote_ip = inet_ntoa(in);
-		Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, remote address was too long, defaulting to stream address %s.", remote_ip.c_str());
+		server_log->Log(log_network_error, "Handle_NewLSInfo error, remote address was too long, defaulting to stream address %s.", remote_ip.c_str());
 	}
 
 	if(strlen(i->serverversion) <= 64)
@@ -331,7 +329,7 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	}
 	else
 	{
-		Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, server version was too long.");
+		server_log->Log(log_network_error, "Handle_NewLSInfo error, server version was too long.");
 		return;
 	}
 
@@ -341,27 +339,27 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	}
 	else
 	{
-		Log.Out(Logs::General, Logs::Error, "Handle_NewLSInfo error, protocol version was too long.");
+		server_log->Log(log_network_error, "Handle_NewLSInfo error, protocol version was too long.");
 		return;
 	}
 
 	server_type = i->servertype;
-	is_server_logged_in = true;
+	logged_in = true;
 
 	if(server.options.IsRejectingDuplicateServers())
 	{
-		if(server.server_manager->ServerExists(long_name, short_name, this))
+		if(server.SM->ServerExists(long_name, short_name, this))
 		{
-			Log.Out(Logs::General, Logs::Error, "World tried to login but there already exists a server that has that name.");
+			server_log->Log(log_world_error, "World tried to login but there already exists a server that has that name.");
 			return;
 		}
 	}
 	else
 	{
-		if(server.server_manager->ServerExists(long_name, short_name, this))
+		if(server.SM->ServerExists(long_name, short_name, this))
 		{
-			Log.Out(Logs::General, Logs::Error, "World tried to login but there already exists a server that has that name.");
-			server.server_manager->DestroyServerByName(long_name, short_name, this);
+			server_log->Log(log_world_error, "World tried to login but there already exists a server that has that name.");
+			server.SM->DestroyServerByName(long_name, short_name, this);
 		}
 	}
 
@@ -380,112 +378,112 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 			{
 				if(s_acct_name.size() == 0 || s_acct_pass.size() == 0)
 				{
-					Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) successfully logged into account that had no user/password requirement.",
+					server_log->Log(log_world, "Server %s(%s) successfully logged into account that had no user/password requirement.",
 						long_name.c_str(), short_name.c_str());
-					is_server_authorized = true;
+					authorized = true;
 					SetRuntimeID(s_id);
 					server_list_id = s_list_type;
 					desc = s_desc;
 				}
 				else if(s_acct_name.compare(account_name) == 0 && s_acct_pass.compare(account_password) == 0)
 				{
-					Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) successfully logged in.",
+					server_log->Log(log_world, "Server %s(%s) successfully logged in.",
 						long_name.c_str(), short_name.c_str());
-					is_server_authorized = true;
+					authorized = true;
 					SetRuntimeID(s_id);
 					server_list_id = s_list_type;
 					desc = s_desc;
-					if(s_trusted) {
-						Log.Out(Logs::General, Logs::Netcode, "ServerOP_LSAccountUpdate sent to world");
-						is_server_trusted = true;
+					if(s_trusted)
+					{
+						server_log->Log(log_network_trace, "ServerOP_LSAccountUpdate sent to world");
+						trusted = true;
 						ServerPacket *outapp = new ServerPacket(ServerOP_LSAccountUpdate, 0);
 						connection->SendPacket(outapp);
 					}
 				}
-				else {
-					Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) attempted to log in but account and password did not match the entry in the database, and only"
+				else
+				{
+					server_log->Log(log_world, "Server %s(%s) attempted to log in but account and password did not match the entry in the database, and only"
 						" registered servers are allowed.", long_name.c_str(), short_name.c_str());
 					return;
 				}
 			}
-			else {
-				Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) attempted to log in but database couldn't find an entry and only registered servers are allowed.",
+			else
+			{
+				server_log->Log(log_world, "Server %s(%s) attempted to log in but database couldn't find an entry and only registered servers are allowed.",
 					long_name.c_str(), short_name.c_str());
 				return;
 			}
 		}
-		else {
-			Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) did not attempt to log in but only registered servers are allowed.",
+		else
+		{
+			server_log->Log(log_world, "Server %s(%s) did not attempt to log in but only registered servers are allowed.",
 				long_name.c_str(), short_name.c_str());
 			return;
 		}
 	}
-	else {
-		unsigned int server_id = 0;
-		unsigned int server_list_type = 0;
-		unsigned int is_server_trusted = 0;
-		string server_description;
-		string server_list_description;
-		string server_account_name;
-		string server_account_password;
-
-
-		if(server.db->GetWorldRegistration(
-			long_name, 
-			short_name, 
-			server_id, 
-			server_description, 
-			server_list_type, 
-			is_server_trusted, 
-			server_list_description, 
-			server_account_name, 
-			server_account_password)) 
+	else
+	{
+		unsigned int s_id = 0;
+		unsigned int s_list_type = 0;
+		unsigned int s_trusted = 0;
+		string s_desc;
+		string s_list_desc;
+		string s_acct_name;
+		string s_acct_pass;
+		if(server.db->GetWorldRegistration(long_name, short_name, s_id, s_desc, s_list_type, s_trusted, s_list_desc, s_acct_name, s_acct_pass))
 		{
-			
-			if(account_name.size() > 0 && account_password.size() > 0) {
-				if(server_account_name.compare(account_name) == 0 && server_account_password.compare(account_password) == 0) {
-					Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) successfully logged in.",
+			if(account_name.size() > 0 && account_password.size() > 0)
+			{
+				if(s_acct_name.compare(account_name) == 0 && s_acct_pass.compare(account_password) == 0)
+				{
+					server_log->Log(log_world, "Server %s(%s) successfully logged in.",
 						long_name.c_str(), short_name.c_str());
-					is_server_authorized = true;
-					SetRuntimeID(server_id);
-					server_list_id = server_list_type;
-					desc = server_description;
-
-					if(is_server_trusted) {
-						Log.Out(Logs::General, Logs::Netcode, "ServerOP_LSAccountUpdate sent to world");
-						is_server_trusted = true;
+					authorized = true;
+					SetRuntimeID(s_id);
+					server_list_id = s_list_type;
+					desc = s_desc;
+					if(s_trusted)
+					{
+						server_log->Log(log_network_trace, "ServerOP_LSAccountUpdate sent to world");
+						trusted = true;
 						ServerPacket *outapp = new ServerPacket(ServerOP_LSAccountUpdate, 0);
 						connection->SendPacket(outapp);
 					}
 				}
-				else {
+				else
+				{
 					// this is the first of two cases where we should deny access even if unregistered is allowed
-					Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) attempted to log in but account and password did not match the entry in the database.",
+					server_log->Log(log_world, "Server %s(%s) attempted to log in but account and password did not match the entry in the database.",
 						long_name.c_str(), short_name.c_str());
 				}
 			}
-			else {
-				if(server_account_name.size() > 0 || server_account_password.size() > 0) {
+			else
+			{
+				if(s_acct_name.size() > 0 || s_acct_pass.size() > 0)
+				{
 					// this is the second of two cases where we should deny access even if unregistered is allowed
-					Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) did not attempt to log in but this server requires a password.",
+					server_log->Log(log_world, "Server %s(%s) did not attempt to log in but this server requires a password.",
 						long_name.c_str(), short_name.c_str());
 				}
-				else {
-					Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) did not attempt to log in but unregistered servers are allowed.",
+				else
+				{
+					server_log->Log(log_world, "Server %s(%s) did not attempt to log in but unregistered servers are allowed.",
 						long_name.c_str(), short_name.c_str());
-					is_server_authorized = true;
-					SetRuntimeID(server_id);
+					authorized = true;
+					SetRuntimeID(s_id);
 					server_list_id = 3;
 				}
 			}
 		}
 		else
 		{
-			Log.Out(Logs::General, Logs::World_Server, "Server %s(%s) attempted to log in but database couldn't find an entry but unregistered servers are allowed.",
+			server_log->Log(log_world, "Server %s(%s) attempted to log in but database couldn't find an entry but unregistered servers are allowed.",
 				long_name.c_str(), short_name.c_str());
-			if(server.db->CreateWorldRegistration(long_name, short_name, server_id)) {
-				is_server_authorized = true;
-				SetRuntimeID(server_id);
+			if(server.db->CreateWorldRegistration(long_name, short_name, s_id))
+			{
+				authorized = true;
+				SetRuntimeID(s_id);
 				server_list_id = 3;
 			}
 		}
@@ -495,9 +493,9 @@ void WorldServer::Handle_NewLSInfo(ServerNewLSInfo_Struct* i)
 	in.s_addr = connection->GetrIP();
 	server.db->UpdateWorldRegistration(GetRuntimeID(), long_name, string(inet_ntoa(in)));
 
-	if(is_server_authorized)
+	if(authorized)
 	{
-		server.client_manager->UpdateServerList();
+		server.CM->UpdateServerList();
 	}
 }
 
@@ -505,40 +503,43 @@ void WorldServer::Handle_LSStatus(ServerLSStatus_Struct *s)
 {
 	players_online = s->num_players;
 	zones_booted = s->num_zones;
-	server_status = s->status;
+	status = s->status;
 }
 
 void WorldServer::SendClientAuth(unsigned int ip, string account, string key, unsigned int account_id)
 {
-	ServerPacket *outapp = new ServerPacket(ServerOP_LSClientAuth, sizeof(ClientAuth_Struct));
-	ClientAuth_Struct* client_auth = (ClientAuth_Struct*)outapp->pBuffer;
+	ServerPacket *outapp = new ServerPacket(ServerOP_LSClientAuth, sizeof(ServerLSClientAuth));
+	ServerLSClientAuth* slsca = (ServerLSClientAuth*)outapp->pBuffer;
 
-	client_auth->lsaccount_id = account_id;
-	strncpy(client_auth->name, account.c_str(), account.size() > 30 ? 30 : account.size());
-	strncpy(client_auth->key, key.c_str(), 10);
-	client_auth->lsadmin = 0;
-	client_auth->worldadmin = 0;
-	client_auth->ip = ip;
+	slsca->lsaccount_id = account_id;
+	strncpy(slsca->name, account.c_str(), account.size() > 30 ? 30 : account.size());
+	strncpy(slsca->key, key.c_str(), 10);
+	slsca->lsadmin = 0;
+	slsca->worldadmin = 0;
+	slsca->ip = ip;
 
 	in_addr in;
-	in.s_addr = ip; connection->GetrIP();
+	in.s_addr = ip;connection->GetrIP();
 	string client_address(inet_ntoa(in));
 	in.s_addr = connection->GetrIP();
 	string world_address(inet_ntoa(in));
 
-	if (client_address.compare(world_address) == 0) {
-		client_auth->local = 1;
+	if(client_address.compare(world_address) == 0)
+	{
+		slsca->local = 1;
 	}
-	else if (client_address.find(server.options.GetLocalNetwork()) != string::npos) {
-		client_auth->local = 1;
+	else if(client_address.find(server.options.GetLocalNetwork()) != string::npos)
+	{
+		slsca->local = 1;
 	}
-	else {
-		client_auth->local = 0;
+	else
+	{
+		slsca->local = 0;
 	}
 
 	connection->SendPacket(outapp);
 
-	if (server.options.IsDumpInPacketsOn())
+	if(server.options.IsDumpInPacketsOn())
 	{
 		DumpPacket(outapp);
 	}

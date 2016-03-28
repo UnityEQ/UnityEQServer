@@ -112,7 +112,7 @@ int32 Mob::GetActSpellDamage(uint16 spell_id, int32 value, Mob* target) {
 			value -= GetFocusEffect(focusFcDamageAmt, spell_id);
 			value -= GetFocusEffect(focusFcDamageAmt2, spell_id);
 
-			if(!spells[spell_id].no_heal_damage_item_mod && itembonuses.SpellDmg && spells[spell_id].classes[(GetClass()%16) - 1] >= GetLevel() - 5)
+			if(itembonuses.SpellDmg && spells[spell_id].classes[(GetClass()%16) - 1] >= GetLevel() - 5)
 				value -= GetExtraSpellAmt(spell_id, itembonuses.SpellDmg, value)*ratio/100;
 
 			else if (IsNPC() && CastToNPC()->GetSpellScale())
@@ -145,7 +145,7 @@ int32 Mob::GetActSpellDamage(uint16 spell_id, int32 value, Mob* target) {
 	value -= GetFocusEffect(focusFcDamageAmt, spell_id);
 	value -= GetFocusEffect(focusFcDamageAmt2, spell_id);
 
-	if(!spells[spell_id].no_heal_damage_item_mod && itembonuses.SpellDmg && spells[spell_id].classes[(GetClass()%16) - 1] >= GetLevel() - 5)
+	if(itembonuses.SpellDmg && spells[spell_id].classes[(GetClass()%16) - 1] >= GetLevel() - 5)
 		 value -= GetExtraSpellAmt(spell_id, itembonuses.SpellDmg, value);
 
 	if (IsNPC() && CastToNPC()->GetSpellScale())
@@ -287,7 +287,7 @@ int32 Mob::GetActSpellHealing(uint16 spell_id, int32 value, Mob* target) {
 		value += GetFocusEffect(focusFcHealAmt, spell_id);
 		value += target->GetFocusIncoming(focusFcHealAmtIncoming, SE_FcHealAmtIncoming, this, spell_id);
 
-		if(!spells[spell_id].no_heal_damage_item_mod && itembonuses.HealAmt && spells[spell_id].classes[(GetClass()%16) - 1] >= GetLevel() - 5)
+		if(itembonuses.HealAmt && spells[spell_id].classes[(GetClass()%16) - 1] >= GetLevel() - 5)
 			value += GetExtraSpellAmt(spell_id, itembonuses.HealAmt, value) * modifier;
 
 		value += value*target->GetHealRate(spell_id, this)/100;
@@ -430,6 +430,9 @@ int32 Client::GetActSpellCost(uint16 spell_id, int32 cost)
 
 int32 Mob::GetActSpellDuration(uint16 spell_id, int32 duration)
 {
+	if (spells[spell_id].not_extendable)
+		return duration;
+
 	int increase = 100;
 	increase += GetFocusEffect(focusSpellDuration, spell_id);
 	int tic_inc = 0;
@@ -571,33 +574,6 @@ bool Client::TrainDiscipline(uint32 itemid) {
 	return(false);
 }
 
-void Client::TrainDiscBySpellID(int32 spell_id)
-{
-	int i;
-	for(i = 0; i < MAX_PP_DISCIPLINES; i++) {
-		if(m_pp.disciplines.values[i] == 0) {
-			m_pp.disciplines.values[i] = spell_id;
-			database.SaveCharacterDisc(this->CharacterID(), i, spell_id);
-			SendDisciplineUpdate();
-			Message(15, "You have learned a new combat ability!");
-			return;
-		}
-	}
-}
-
-int Client::GetDiscSlotBySpellID(int32 spellid)
-{
-	int i;
-
-	for(i = 0; i < MAX_PP_DISCIPLINES; i++)
-	{
-		if(m_pp.disciplines.values[i] == spellid)
-			return i;
-	}
-	
-	return -1;
-}
-
 void Client::SendDisciplineUpdate() {
 	EQApplicationPacket app(OP_DisciplineUpdate, sizeof(Disciplines_Struct));
 	Disciplines_Struct *d = (Disciplines_Struct*)app.pBuffer;
@@ -653,7 +629,10 @@ bool Client::UseDiscipline(uint32 spell_id, uint32 target) {
 		return(false);
 	}
 
-	if(GetEndurance() < spell.EndurCost) {
+	if(GetEndurance() > spell.EndurCost) {
+		SetEndurance(GetEndurance() - spell.EndurCost);
+		TryTriggerOnValueAmount(false, false, true);
+	} else {
 		Message(11, "You are too fatigued to use this skill right now.");
 		return(false);
 	}

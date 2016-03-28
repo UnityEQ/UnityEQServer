@@ -23,7 +23,6 @@
 
 #include "global_define.h"
 #include "eqemu_logsys.h"
-
 #include "types.h"
 #include "dbcore.h"
 #include "linked_list.h"
@@ -174,8 +173,10 @@ public:
 
 	uint32	CheckLogin(const char* name, const char* password, int16* oStatus = 0);
 	uint32	CreateAccount(const char* name, const char* password, int16 status, uint32 lsaccount_id = 0);
+	uint32	GetMaxLSID(uint32 &max_id);
 	uint32	GetAccountIDFromLSID(uint32 iLSID, char* oAccountName = 0, int16* oStatus = 0);
 	uint32	GetMiniLoginAccount(char* ip);
+	bool	CheckLoginName(const char* ip);
 	uint8	GetAgreementFlag(uint32 acctid);
 
 	void	GetAccountFromID(uint32 id, char* oAccountName, int16* oStatus);
@@ -210,6 +211,7 @@ public:
 	/* Database Conversions 'database_conversions.cpp' */
 
 	bool	CheckDatabaseConversions();
+	bool	CheckDatabaseConvertBotsPostPPDeblob();
 	bool	CheckDatabaseConvertCorpseDeblob();
 	bool	CheckDatabaseConvertPPDeblob();
 
@@ -241,8 +243,6 @@ public:
 	uint8	GetSkillCap(uint8 skillid, uint8 in_race, uint8 in_class, uint16 in_level);
 
 	void	AddReport(std::string who, std::string against, std::string lines);
-	struct TimeOfDay_Struct		LoadTime(time_t &realtime);
-	bool	SaveTime(int8 minute, int8 hour, int8 day, int8 month, int16 year);
 	void	ClearMerchantTemp();
 	void	ClearPTimers(uint32 charid);
 	void	SetFirstLogon(uint32 CharID, uint8 firstlogon);

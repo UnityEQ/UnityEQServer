@@ -35,7 +35,7 @@ public:
 	/**
 	* Constructor, sets our database to null.
 	*/
-	DatabaseMySQL() { database = nullptr; }
+	DatabaseMySQL() { db = nullptr; }
 
 	/**
 	* Constructor, tries to set our database to connect to the supplied options.
@@ -50,7 +50,7 @@ public:
 	/**
 	* @return Returns true if the database successfully connected.
 	*/
-	virtual bool IsConnected() { return (database != nullptr); }
+	virtual bool IsConnected() { return (db != nullptr); }
 
 	/**
 	* Retrieves the login data (password hash and account id) from the account name provided
@@ -58,8 +58,6 @@ public:
 	* Returns true if the record was found, false otherwise.
 	*/
 	virtual bool GetLoginDataFromAccountName(std::string name, std::string &password, unsigned int &id);
-
-	virtual bool CreateLoginData(std::string name, std::string &password, unsigned int &id);
 
 	/**
 	* Retrieves the world registration from the long and short names provided.
@@ -90,7 +88,7 @@ public:
 	virtual bool CreateWorldRegistration(std::string long_name, std::string short_name, unsigned int &id);
 protected:
 	std::string user, pass, host, port, name;
-	MYSQL *database;
+	MYSQL *db;
 };
 
 #endif

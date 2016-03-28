@@ -38,7 +38,7 @@ struct LoginLoginRequest_Struct {
 	char unknown6[16];
 };
 
-struct LoginAccepted_Struct {
+struct LoginLoginAccepted_Struct {
 	short unknown1;
 	short unknown2;
 	short unknown3;
@@ -47,7 +47,7 @@ struct LoginAccepted_Struct {
 	char encrypt[80];
 };
 
-struct LoginFailedAttempts_Struct
+struct Login_ReplyBlock_Struct
 {
 	char message; //0x01
 	char unknown2[7]; //0x00

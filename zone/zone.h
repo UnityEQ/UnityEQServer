@@ -140,7 +140,6 @@ public:
 
 	bool	Depop(bool StartSpawnTimer = false);
 	void	Repop(uint32 delay = 0);
-	void	RepopClose(const glm::vec4& client_position, uint32 repop_distance);
 	void	ClearNPCTypeCache(int id);
 	void	SpawnStatus(Mob* client);
 	void	ShowEnabledSpawnStatus(Mob* client);

@@ -86,7 +86,7 @@
 #endif
 
 volatile bool RunLoops = true;
-extern volatile bool is_zone_loaded;
+extern volatile bool ZoneLoaded;
 
 TimeoutManager timeout_manager;
 NetConnection net;
@@ -113,8 +113,11 @@ extern void MapOpcodes();
 int main(int argc, char** argv) {
 	RegisterExecutablePlatform(ExePlatformZone);
 	Log.LoadLogSettingsDefaults();
+	set_exception_handler();
+	register_remote_call_handlers();
 
-	set_exception_handler(); 
+	const char *zone_name;
+
 	QServ = new QueryServ;
 
 	Log.Out(Logs::General, Logs::Zone_Server, "Loading server configuration..");
@@ -123,8 +126,6 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	const ZoneConfig *Config = ZoneConfig::get();
-
-	const char *zone_name;
 	uint32 instance_id = 0;
 	std::string z_name;
 	if(argc == 4) {
@@ -343,10 +344,6 @@ int main(int argc, char** argv) {
 #ifdef EMBPERL
 	PerlembParser *perl_parser = new PerlembParser();
 	parse->RegisterQuestInterface(perl_parser, "pl");
-
-	/* Load Perl Event Export Settings */
-	parse->LoadPerlEventExportSettings(parse->perl_event_export_settings);
-
 #endif
 
 	//now we have our parser, load the quests
@@ -383,13 +380,19 @@ int main(int argc, char** argv) {
 	Timer quest_timers(100);
 	UpdateWindowTitle();
 	bool worldwasconnected = worldserver.Connected();
-	std::shared_ptr<EQStream> eqss;
 	std::shared_ptr<EQWebStream> eqwss;
 	EQStreamInterface *eqsi;
 	uint8 IDLEZONEUPDATE = 200;
 	uint8 ZONEUPDATE = 10;
 	Timer zoneupdate_timer(ZONEUPDATE);
 	zoneupdate_timer.Start();
+
+	if (Config->ZonePort!=0) {
+			if (!eqwsf.Open()) {
+				Log.Out(Logs::General, Logs::Zone_Server, "Failed to open websockets for port %d",Config->ZonePort);
+			}
+	}
+
 	while(RunLoops) {
 		{	//profiler block to omit the sleep from times
 
@@ -398,35 +401,14 @@ int main(int argc, char** argv) {
 
 		worldserver.Process();
 
-		if (!eqsf.IsOpen() && Config->ZonePort != 0) {
-			Log.Out(Logs::General, Logs::Zone_Server, "Starting EQ Network server on port %d", Config->ZonePort);
+		if (!eqsf.IsOpen() && Config->ZonePort!=0) {
+			Log.Out(Logs::General, Logs::Zone_Server, "Starting EQ Network server on port %d",Config->ZonePort);
 			if (!eqsf.Open(Config->ZonePort)) {
-				Log.Out(Logs::General, Logs::Error, "Failed to open port %d", Config->ZonePort);
+				Log.Out(Logs::General, Logs::Error, "Failed to open port %d",Config->ZonePort);
 				ZoneConfig::SetZonePort(0);
 				worldserver.Disconnect();
 				worldwasconnected = false;
 			}
-		}
-
-		if (Config->ZonePort!=0) {
-			if (!eqwsf.Open()) {
-				Log.Out(Logs::General, Logs::Zone_Server, "Failed to open websockets for port %d",Config->ZonePort);
-			}
-			else
-			{
-				Log.Out(Logs::General, Logs::Zone_Server, "Starting Websocket server on port %d",Config->ZonePort);
-			}
-		}
-
-		//check the factory for any new incoming streams.
-		while ((eqss = eqsf.Pop())) {
-			//pull the stream out of the factory and give it to the stream identifier
-			//which will figure out what patch they are running, and set up the dynamic
-			//structures and opcodes for that patch.
-			struct in_addr	in;
-			in.s_addr = eqss->GetRemoteIP();
-			Log.Out(Logs::Detail, Logs::World_Server, "New connection from %s:%d", inet_ntoa(in), ntohs(eqss->GetRemotePort()));
-			stream_identifier.AddStream(eqss);	//takes the stream
 		}
 
 		//check the factory for any new incoming streams.
@@ -468,12 +450,12 @@ int main(int argc, char** argv) {
 			worldwasconnected = true;
 		}
 		else {
-			if (worldwasconnected && is_zone_loaded)
+			if (worldwasconnected && ZoneLoaded)
 				entity_list.ChannelMessageFromWorld(0, 0, 6, 0, 0, "WARNING: World server connection lost");
 			worldwasconnected = false;
 		}
 
-		if (is_zone_loaded && zoneupdate_timer.Check()) {
+		if (ZoneLoaded && zoneupdate_timer.Check()) {
 			{
 				if(net.group_timer.Enabled() && net.group_timer.Check())
 					entity_list.GroupProcess();
