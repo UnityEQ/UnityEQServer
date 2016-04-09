@@ -178,7 +178,7 @@ int main() {
 		Log.Out(Logs::General, Logs::WebInterface_Server, "Unable to connect to the database, cannot continue without a database connection");
 		return 1;
 	}
-
+	db->LoadLogSettings(Log.log_settings);
 	worldserver = new WorldServer(config->SharedKey);
 	worldserver->Connect();
 	writable_socket_timer.Start(10);

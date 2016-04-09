@@ -382,6 +382,7 @@ void Client::SendPostEnterWorld() {
 }
 
 bool Client::HandleSendLoginInfoPacket(const EQApplicationPacket *app) {
+	DumpPacket(app, true);
 	if (app->size != sizeof(LoginInfo_Struct)) {
 		return false;
 	}

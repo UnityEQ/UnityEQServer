@@ -264,6 +264,7 @@ int16 Database::CheckStatus(uint32 account_id) {
 	return status;
 }
 
+
 uint32 Database::GetMaxLSID(uint32 &max_id)
 {
 	max_id = 0;
@@ -292,8 +293,10 @@ uint32 Database::CreateAccount(const char* name, const char* password, int16 sta
 
 	GetMaxLSID(maxLSID);
 
+	uint32 maxLSIDfinal = maxLSID + 1;
+
 	if (password)
-		query = StringFormat("INSERT INTO account SET name='%s', password='%s', status=%i, lsaccount_id=%i, time_creation=UNIX_TIMESTAMP();",name,password,status, maxLSID);
+		query = StringFormat("INSERT INTO account SET name='%s', password='%s', status=%i, lsaccount_id=%i, time_creation=UNIX_TIMESTAMP();", name, password, status, maxLSIDfinal);
 	else
 		return 0;
 
