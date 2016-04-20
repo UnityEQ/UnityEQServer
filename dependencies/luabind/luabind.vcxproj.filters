@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\class.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\class_info.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\class_registry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\class_rep.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\create_class.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\error.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\exception_handler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\function.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\inheritance.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\link_compatibility.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\object_rep.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\open.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\pcall.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\scope.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\stack_content_by_name.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\weak_ref.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\wrapper_base.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{8162CA7D-517B-48FA-8FD5-32554215D3A3}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
