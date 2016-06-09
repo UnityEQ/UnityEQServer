@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\comrade\Desktop\unityeqsource\build\CMakeFiles\18ac4f083b20215799b787c46d9714e1\PACKAGE_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{E42CA474-1483-4AD3-B93E-7C257A9798F9}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

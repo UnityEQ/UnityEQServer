@@ -1,0 +1,81 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<Project ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\base64-decode.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\handshake.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\libwebsockets.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\service.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\pollfd.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\output.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\parsers.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\context.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\sha-1.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\lws-plat-win.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\server.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\server-handshake.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\extension.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\extension-deflate-frame.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\extension-deflate-stream.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\private-libwebsockets.h">
+      <Filter>Headers Private</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\comrade\Desktop\unityeqsource\build\dependencies\libwebsockets\lws_config.h">
+      <Filter>Headers Private</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\extension-deflate-frame.h">
+      <Filter>Headers Private</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\extension-deflate-stream.h">
+      <Filter>Headers Private</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\lib\libwebsockets.h">
+      <Filter>Headers Public</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Headers Private">
+      <UniqueIdentifier>{DEE558EE-7438-4221-B11A-79212545F4ED}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Headers Public">
+      <UniqueIdentifier>{6AC94ECE-F5F4-420F-8ACF-A8052AAD484A}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Sources">
+      <UniqueIdentifier>{53C03130-404F-4487-9582-7CD0706A4F11}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

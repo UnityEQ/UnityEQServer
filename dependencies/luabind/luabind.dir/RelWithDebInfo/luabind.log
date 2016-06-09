@@ -1,0 +1,65 @@
+﻿Build started 1/11/2016 2:43:19 AM.
+     1>Project "C:\Users\comrade\Desktop\unityeqsource\build\dependencies\luabind\luabind.vcxproj" on node 4 (Build target(s)).
+     1>CustomBuild:
+         Building Custom Rule C:/Users/comrade/Desktop/unityeqsource/dependencies/luabind/CMakeLists.txt
+         CMake does not need to re-run because C:\Users\comrade\Desktop\unityeqsource\build\dependencies\luabind\CMakeFiles\generate.stamp is up-to-date.
+       ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\CL.exe /c /IC:\Perl\lib\CORE /IC:\Users\comrade\Desktop\unityeqsource\dependencies\luaj_x86\src /IC:\Users\comrade\Desktop\unityeqsource\dependencies\boost /IC:\Users\comrade\Desktop\unityeqsource\dependencies\luabind /IC:\Users\comrade\Desktop\unityeqsource\dependencies\zlib_x86\include /IC:\Users\comrade\Desktop\unityeqsource\dependencies\mysql_x86\include /IC:\Users\comrade\Desktop\unityeqsource\common\glm /IC:\Users\comrade\Desktop\unityeqsource\dependencies\libwebsockets /IC:\Users\comrade\Desktop\unityeqsource\common\rapidjson /Zi /nologo /W0 /WX- /MP /O2 /Ob1 /Oy- /D WIN32 /D _WINDOWS /D NDEBUG /D _WINDOWS /D WIN32 /D _CRT_SECURE_NO_WARNINGS /D CRASH_LOGGING /D NOMINMAX /D COMMANDS_LOGGING /D DISABLE_LOGSYS /D EMBPERL /D EMBPERL_PLUGIN /D LUA_EQEMU /D EQDEBUG=5 /D INVERSEXY /D FIELD_ITEMS /D "MAP_DIR=\"./Maps\"" /D RATEBASE=1048576 /D DECAYBASE=78642 /D RETRANSMIT_TIMEOUT_MULT=3.0 /D RETRANSMIT_TIMEOUT_MAX=5000 /D AVERAGE_DELTA_MAX=2500 /D LOG_LEVEL_STATUS=2 /D LOG_LEVEL_NORMAL=3 /D LOG_LEVEL_ERROR=2 /D LOG_LEVEL_DEBUG=3 /D LOG_LEVEL_QUEST=2 /D LOG_LEVEL_COMMANDS=1 /D LOG_LEVEL_CRASH=3 /D GLM_FORCE_RADIANS /D RETRANSMIT_ACKED_PACKETS=true /D SANITIZE_LUA_LIBS /D "CMAKE_INTDIR=\"RelWithDebInfo\"" /D _MBCS /Gm- /EHsc /MT /GS /fp:fast /Zc:wchar_t /Zc:forScope /GR /Fo"luabind.dir\RelWithDebInfo\\" /Fd"luabind.dir\RelWithDebInfo\vc120.pdb" /Gd /TP /analyze- /errorReport:prompt C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\class.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\class_info.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\class_registry.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\class_rep.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\create_class.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\error.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\exception_handler.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\function.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\inheritance.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\link_compatibility.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\object_rep.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\open.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\pcall.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\scope.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\stack_content_by_name.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\weak_ref.cpp C:\Users\comrade\Desktop\unityeqsource\dependencies\luabind\src\wrapper_base.cpp
+         class.cpp
+         class_info.cpp
+         class_registry.cpp
+         class_rep.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         Unknown compiler version - please run the configure tests and report the results
+         Unknown compiler version - please run the configure tests and report the results
+         Unknown compiler version - please run the configure tests and report the results
+         create_class.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         error.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         exception_handler.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         function.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         inheritance.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         link_compatibility.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         object_rep.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         open.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         pcall.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         scope.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         stack_content_by_name.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         weak_ref.cpp
+         wrapper_base.cpp
+         Unknown compiler version - please run the configure tests and report the results
+         Unknown compiler version - please run the configure tests and report the results
+       Lib:
+         C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin\Lib.exe /OUT:"C:\Users\comrade\Desktop\unityeqsource\build\bin\RelWithDebInfo\luabind.lib" /NOLOGO luabind.dir\RelWithDebInfo\class.obj
+         luabind.dir\RelWithDebInfo\class_info.obj
+         luabind.dir\RelWithDebInfo\class_registry.obj
+         luabind.dir\RelWithDebInfo\class_rep.obj
+         luabind.dir\RelWithDebInfo\create_class.obj
+         luabind.dir\RelWithDebInfo\error.obj
+         luabind.dir\RelWithDebInfo\exception_handler.obj
+         luabind.dir\RelWithDebInfo\function.obj
+         luabind.dir\RelWithDebInfo\inheritance.obj
+         luabind.dir\RelWithDebInfo\link_compatibility.obj
+         luabind.dir\RelWithDebInfo\object_rep.obj
+         luabind.dir\RelWithDebInfo\open.obj
+         luabind.dir\RelWithDebInfo\pcall.obj
+         luabind.dir\RelWithDebInfo\scope.obj
+         luabind.dir\RelWithDebInfo\stack_content_by_name.obj
+         luabind.dir\RelWithDebInfo\weak_ref.obj
+         luabind.dir\RelWithDebInfo\wrapper_base.obj
+         luabind.vcxproj -> C:\Users\comrade\Desktop\unityeqsource\build\bin\RelWithDebInfo\luabind.lib
+     1>Done Building Project "C:\Users\comrade\Desktop\unityeqsource\build\dependencies\luabind\luabind.vcxproj" (Build target(s)).
+
+Build succeeded.
+
+Time Elapsed 00:00:38.18
