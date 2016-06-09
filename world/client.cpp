@@ -1038,10 +1038,10 @@ bool Client::HandlePacket(const EQApplicationPacket *app) {
 		}
 		case OP_WorldComplete:
 		{
-//			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
-//			outapp->pBuffer[0] = 0;
-//			QueuePacket(outapp);
-//			safe_delete(outapp);
+			auto outapp = new EQApplicationPacket(OP_EmuRequestClose, 1); //uint8 reason
+			outapp->pBuffer[0] = 0;
+			QueuePacket(outapp);
+			safe_delete(outapp);
 
 			eqs->Close();
 			return true;
