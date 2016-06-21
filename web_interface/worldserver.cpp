@@ -57,7 +57,7 @@ void WorldServer::Process(){
 	ServerPacket *pack = nullptr;
 	while((pack = tcpc.PopPacket())){
 		Log.Out(Logs::General, Logs::Netcode, "Received Opcode: %4X", pack->opcode);
-		DumpPacket(pack);
+		//DumpPacket(pack);
 		switch(pack->opcode) {
 			case 0: { break; }
 			case ServerOP_KeepAlive: { break; }

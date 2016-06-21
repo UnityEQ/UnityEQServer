@@ -875,7 +875,6 @@ uint32 Database::GetAccountIDByName(const char* accname, int16* status, uint32* 
 	if (!results.Success()) {
 		return 0;
 	}
-
 	if (results.RowCount() != 1)
 		return 0;
 

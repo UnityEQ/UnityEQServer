@@ -28,6 +28,7 @@ void WebInterfaceConnection::SetConnection(EmuTCPConnection *inStream)
 	{
 		Log.Out(Logs::General, Logs::WebInterface_Server, "Incoming WebInterface Connection while we were already connected to a WebInterface.");
 		stream->Disconnect();
+		safe_delete(stream);
 	}
 
 	stream = inStream;

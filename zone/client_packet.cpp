@@ -1102,15 +1102,6 @@ void Client::Handle_Connect_OP_SendAATable(const EQApplicationPacket *app)
 
 void Client::Handle_Connect_OP_SendExpZonein(const EQApplicationPacket *app)
 {
-	EQApplicationPacket* outapp = new EQApplicationPacket(OP_SendExpZonein, 0);
-	QueuePacket(outapp);
-	safe_delete(outapp);
-
-	// SoF+ Gets Zone-In packets after sending OP_WorldObjectsSent
-	if (GetClientVersion() < ClientVersion::SoF)
-	{
-		SendZoneInPackets();
-	}
 
 	return;
 }
@@ -1168,19 +1159,6 @@ void Client::Handle_Connect_OP_WearChange(const EQApplicationPacket *app)
 
 void Client::Handle_Connect_OP_WorldObjectsSent(const EQApplicationPacket *app)
 {
-	// New for SoF+
-	EQApplicationPacket* outapp = new EQApplicationPacket(OP_WorldObjectsSent, 0);
-	QueuePacket(outapp);
-	safe_delete(outapp);
-
-	// Packet order changed for SoF+, so below is sent here instead of OP_SendExpLogin
-	SendZoneInPackets();
-
-	if (RuleB(Mercs, AllowMercs))
-	{
-		SpawnMercOnZone();
-	}
-
 	return;
 }
 
@@ -1732,6 +1710,16 @@ void Client::Handle_Connect_OP_ZoneEntry(const EQApplicationPacket *app)
 
 	SetAttackTimer();
 	conn_state = ZoneInfoSent;
+
+	outapp = new EQApplicationPacket(OP_SendExpZonein, 0);
+	QueuePacket(outapp);
+	safe_delete(outapp);
+
+	// SoF+ Gets Zone-In packets after sending OP_WorldObjectsSent
+	if (GetClientVersion() < ClientVersion::SoF)
+	{
+		SendZoneInPackets();
+	}
 
 	return;
 }
