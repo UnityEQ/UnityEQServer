@@ -24,6 +24,88 @@
 #include "worldserver.h"
 #include "zonedb.h"
 
+char *SerializeItem(const ItemInst *inst, int16 slot_id_in, uint32 *length, uint8 depth)
+	{
+		char *serialization = nullptr;
+		char *instance = nullptr;
+		const char *protection = (const char *)"\\\\\\\\\\";
+		char *sub_items[10] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+		bool stackable = inst->IsStackable();
+		uint32 merchant_slot = inst->GetMerchantSlot();
+		int16 charges = inst->GetCharges();
+		const Item_Struct *item = inst->GetUnscaledItem();
+		int i;
+		uint32 sub_length;
+
+		MakeAnyLenString(&instance,
+			"%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|%i|",
+			stackable ? charges : 0,
+			0,
+			//(merchant_slot == 0) ? slot_id : merchant_slot, // change when translator activated
+			(merchant_slot == 0) ? slot_id_in : merchant_slot,
+			inst->GetPrice(),
+			(merchant_slot == 0) ? 1 : inst->GetMerchantCount(),
+			inst->IsScaling() ? inst->GetExp() / 100 : 0,
+			//merchant_slot,	//instance ID, bullshit for now
+			(merchant_slot == 0) ? inst->GetSerialNumber() : merchant_slot,
+			inst->GetRecastTimestamp(),
+			(stackable ? ((inst->GetItem()->ItemType == ItemTypePotion) ? 1 : 0) : charges),
+			inst->IsAttuned() ? 1 : 0,
+			0
+			);
+
+		for (i = 0; i<10; i++) {
+			ItemInst *sub = inst->GetItem(i);
+			if (sub) {
+				sub_items[i] = SerializeItem(sub, 0, &sub_length, depth + 1);
+			}
+		}
+
+		*length = MakeAnyLenString(&serialization,
+			"%.*s%s"	// For leading quotes (and protection) if a subitem;
+			"%s"		// Instance data
+			"%.*s\""	// Quotes (and protection, if needed) around static data
+			"%i"		// item->ItemClass so we can do |%s instead of %s|
+#define I(field) "|%i"
+#define C(field) "|%s"
+#define S(field) "|%s"
+#define F(field) "|%f"
+#include "../common/patches/titanium_itemfields.h"
+			"%.*s\""	// Quotes (and protection, if needed) around static data
+			"|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s"	// Sub items
+			"%.*s%s"	// For trailing quotes (and protection) if a subitem;
+			, depth ? depth - 1 : 0, protection, (depth) ? "\"" : ""
+			, instance
+			, depth, protection
+			, item->ItemClass
+#define I(field) ,item->field
+#define C(field) ,field
+#define S(field) ,item->field
+#define F(field) ,item->field
+#include "../common/patches/titanium_itemfields.h"
+			, depth, protection
+			, sub_items[0] ? sub_items[0] : ""
+			, sub_items[1] ? sub_items[1] : ""
+			, sub_items[2] ? sub_items[2] : ""
+			, sub_items[3] ? sub_items[3] : ""
+			, sub_items[4] ? sub_items[4] : ""
+			, sub_items[5] ? sub_items[5] : ""
+			, sub_items[6] ? sub_items[6] : ""
+			, sub_items[7] ? sub_items[7] : ""
+			, sub_items[8] ? sub_items[8] : ""
+			, sub_items[9] ? sub_items[9] : ""
+			, (depth) ? depth - 1 : 0, protection, (depth) ? "\"" : ""
+			);
+
+		for (i = 0; i<10; i++) {
+			if (sub_items[i])
+				safe_delete_array(sub_items[i]);
+		}
+
+		safe_delete_array(instance);
+		return serialization;
+	}
+
 extern WorldServer worldserver;
 
 // @merth: this needs to be touched up
@@ -2649,7 +2731,8 @@ void Client::SendItemPacket(int16 slot_id, const ItemInst* inst, ItemPacketType 
 		return;
 
 	// Serialize item into |-delimited string
-	std::string packet = inst->Serialize(slot_id);
+	uint32 length;
+	std::string packet = SerializeItem(inst, slot_id, &length, 0);
 
 	EmuOpcode opcode = OP_Unknown;
 	EQApplicationPacket* outapp = nullptr;
@@ -2674,7 +2757,8 @@ EQApplicationPacket* Client::ReturnItemPacket(int16 slot_id, const ItemInst* ins
 		return nullptr;
 
 	// Serialize item into |-delimited string
-	std::string packet = inst->Serialize(slot_id);
+	uint32 length;
+	std::string packet = SerializeItem(inst, slot_id, &length, 0);
 
 	EmuOpcode opcode = OP_Unknown;
 	EQApplicationPacket* outapp = nullptr;
