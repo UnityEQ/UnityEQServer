@@ -59,7 +59,7 @@ extern volatile bool ZoneLoaded;
 extern WorldServer worldserver;
 extern PetitionList petition_list;
 extern EntityList entity_list;
-
+extern char *SerializeItem(const ItemInst *inst, int16 slot_id_in, uint32 *length, uint8 depth);
 bool Client::Process() {
 	bool ret = true;
 
@@ -780,7 +780,6 @@ void Client::OnDisconnect(bool hard_disconnect) {
 // Sends the client complete inventory used in character login
 
 // DO WE STILL NEED THE 'ITEMCOMBINED' CONDITIONAL CODE?
-
 //#ifdef ITEMCOMBINED
 void Client::BulkSendInventoryItems() {
 	int16 slot_id = 0;
@@ -833,12 +832,13 @@ void Client::BulkSendInventoryItems() {
 	uint16 i = 0;
 	std::map<uint16, std::string> ser_items;
 	std::map<uint16, std::string>::iterator itr;
+	uint32 length = 0;
 
 	//Inventory items
 	for(slot_id = MAIN_BEGIN; slot_id < EmuConstants::MAP_POSSESSIONS_SIZE; slot_id++) {
 		const ItemInst* inst = m_inv[slot_id];
 		if(inst) {
-			std::string packet = inst->Serialize(slot_id);
+			std::string packet = SerializeItem(inst, slot_id, &length, 0);
 			ser_items[i++] = packet;
 			size += packet.length();
 		}
@@ -848,7 +848,7 @@ void Client::BulkSendInventoryItems() {
 	if(GetClientVersion() >= ClientVersion::SoF) {
 		const ItemInst* inst = m_inv[MainPowerSource];
 		if(inst) {
-			std::string packet = inst->Serialize(MainPowerSource);
+			std::string packet = SerializeItem(inst, slot_id, &length, 0);
 			ser_items[i++] = packet;
 			size += packet.length();
 		}
@@ -858,7 +858,7 @@ void Client::BulkSendInventoryItems() {
 	for(slot_id = EmuConstants::BANK_BEGIN; slot_id <= EmuConstants::BANK_END; slot_id++) {
 		const ItemInst* inst = m_inv[slot_id];
 		if(inst) {
-			std::string packet = inst->Serialize(slot_id);
+			std::string packet = SerializeItem(inst, slot_id, &length, 0);
 			ser_items[i++] = packet;
 			size += packet.length();
 		}
@@ -868,7 +868,7 @@ void Client::BulkSendInventoryItems() {
 	for(slot_id = EmuConstants::SHARED_BANK_BEGIN; slot_id <= EmuConstants::SHARED_BANK_END; slot_id++) {
 		const ItemInst* inst = m_inv[slot_id];
 		if(inst) {
-			std::string packet = inst->Serialize(slot_id);
+			std::string packet = SerializeItem(inst, slot_id, &length, 0);
 			ser_items[i++] = packet;
 			size += packet.length();
 		}
