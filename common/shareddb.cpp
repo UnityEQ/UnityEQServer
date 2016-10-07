@@ -2037,7 +2037,7 @@ bool SharedDatabase::VerifyToken(std::string token, int& status) {
 
 	token = EscapeString(token);
 
-	uint32 tokenStatus = 1;
+	uint32 tokenStatus = 255;
 	std::string query2 = StringFormat("INSERT IGNORE INTO tokens (status, token) VALUES (%u, '%s')", tokenStatus, token.c_str());
 	QueryDatabase(query2);
 
