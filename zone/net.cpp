@@ -85,6 +85,13 @@
 	#include "../common/unix.h"
 #endif
 
+FILE _iob[] = { *stdin, *stdout, *stderr };
+
+//extern "C" FILE * __cdecl __iob_func(void)
+//{
+//	return _iob;
+//}
+
 volatile bool RunLoops = true;
 extern volatile bool ZoneLoaded;
 

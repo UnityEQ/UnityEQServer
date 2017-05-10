@@ -3,6 +3,13 @@
 #include "method_handler.h"
 #include "remote_call.h"
 
+FILE _iob[] = { *stdin, *stdout, *stderr };
+
+//extern "C" FILE * __cdecl __iob_func(void)
+//{
+//	return _iob;
+//}
+
 EQEmuLogSys Log;
 volatile bool run = true;
 TimeoutManager timeout_manager;

@@ -1296,39 +1296,10 @@ void Client::Clearance(int8 response)
 	// Send zone server IP data
 	outapp = new EQApplicationPacket(OP_ZoneServerInfo, sizeof(ZoneServerInfo_Struct));
 	ZoneServerInfo_Struct* zsi = (ZoneServerInfo_Struct*)outapp->pBuffer;
-
-	const char *zs_addr = nullptr;
-	if(cle && cle->IsLocalClient()) {
-		const char *local_addr = zs->GetCLocalAddress();
-
-		if(local_addr[0]) {
-			zs_addr = local_addr;
-		} else {
-			struct in_addr in;
-			in.s_addr = zs->GetIP();
-			zs_addr = inet_ntoa(in);
-
-			if(strcmp(zs_addr, "127.0.0.1") == 0)
-			{
-				Log.Out(Logs::Detail, Logs::World_Server, "Local zone address was %s, setting local address to: %s", zs_addr, WorldConfig::get()->LocalAddress.c_str());
-				zs_addr = WorldConfig::get()->LocalAddress.c_str();
-			} else {
-				Log.Out(Logs::Detail, Logs::World_Server, "Local zone address %s", zs_addr);
-			}
-		}
-
-	} else {
-		const char *addr = zs->GetCAddress();
-		if(addr[0]) {
-			zs_addr = addr;
-		} else {
-			zs_addr = WorldConfig::get()->WorldAddress.c_str();
-		}
-	}
-
-	strcpy(zsi->ip, zs_addr);
+	zsi->zone_id = zoneID;
+	zsi->instance_id = instanceID;
 	zsi->port =zs->GetCPort();
-	Log.Out(Logs::Detail, Logs::World_Server,"Sending client to zone %s (%d:%d) at %s:%d",zonename,zoneID,instanceID,zsi->ip,zsi->port);
+	Log.Out(Logs::Detail, Logs::World_Server,"Sending client to zone %s (%d:%d) at %d (%d):%d",zonename,zoneID,instanceID,zsi->zone_id, zsi->instance_id, zsi->port);
 	QueuePacket(outapp);
 	safe_delete(outapp);
 

@@ -311,6 +311,14 @@ void WorldServer::Process() {
 			uint32 zone_id = std::stoi(params[0]);
 			uint32 instance_id = std::stoi(params[1]);
 
+
+			uint32 opcode = std::stoi(params[2]);
+			//hardcoded, first expected packets
+			if (opcode == OP_SendLoginInfo || opcode == OP_ZoneEntry)
+			{
+				eqwsf.CheckNewConnection(session_id);
+			}
+
 			if(eqwsf.FindSessionByID(session_id))
 			{
 				eqwsf.ProcessIncomingPacket(session_id, params);

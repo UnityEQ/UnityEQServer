@@ -839,8 +839,8 @@ void Client::BulkSendInventoryItems() {
 		const ItemInst* inst = m_inv[slot_id];
 		if(inst) {
 			std::string packet = SerializeItem(inst, slot_id, &length, 0);
-			ser_items[i++] = packet;
-			size += packet.length();
+			ser_items[i++] = packet;		
+ 			size += packet.length();
 		}
 	}
 
@@ -848,9 +848,7 @@ void Client::BulkSendInventoryItems() {
 	if(GetClientVersion() >= ClientVersion::SoF) {
 		const ItemInst* inst = m_inv[MainPowerSource];
 		if(inst) {
-			std::string packet = SerializeItem(inst, slot_id, &length, 0);
-			ser_items[i++] = packet;
-			size += packet.length();
+			SendItemPacket(slot_id, inst, ItemPacketCharInventory);
 		}
 	}
 
@@ -859,8 +857,8 @@ void Client::BulkSendInventoryItems() {
 		const ItemInst* inst = m_inv[slot_id];
 		if(inst) {
 			std::string packet = SerializeItem(inst, slot_id, &length, 0);
-			ser_items[i++] = packet;
-			size += packet.length();
+			ser_items[i++] = packet;		
+ 			size += packet.length();
 		}
 	}
 
@@ -869,22 +867,22 @@ void Client::BulkSendInventoryItems() {
 		const ItemInst* inst = m_inv[slot_id];
 		if(inst) {
 			std::string packet = SerializeItem(inst, slot_id, &length, 0);
-			ser_items[i++] = packet;
-			size += packet.length();
+			ser_items[i++] = packet;		
+ 			size += packet.length();		
+ 		}		
+ 	}		
+ 		
+ 	EQApplicationPacket* outapp = new EQApplicationPacket(OP_CharInventory, size);		
+ 	uchar* ptr = outapp->pBuffer;		
+ 	for(itr = ser_items.begin(); itr != ser_items.end(); ++itr){		
+ 		int length = itr->second.length();		
+ 		if(length > 5) {		
+ 			memcpy(ptr, itr->second.c_str(), length);		
+ 			ptr += length;
 		}
 	}
-
-	EQApplicationPacket* outapp = new EQApplicationPacket(OP_CharInventory, size);
-	uchar* ptr = outapp->pBuffer;
-	for(itr = ser_items.begin(); itr != ser_items.end(); ++itr){
-		int length = itr->second.length();
-		if(length > 5) {
-			memcpy(ptr, itr->second.c_str(), length);
-			ptr += length;
-		}
-	}
-	QueuePacket(outapp);
-	safe_delete(outapp);
+	QueuePacket(outapp);		
+ 	safe_delete(outapp);
 }
 /*#else
 void Client::BulkSendInventoryItems()

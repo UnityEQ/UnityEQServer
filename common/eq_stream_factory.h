@@ -90,6 +90,7 @@ class EQWebStreamFactory : private Timeoutable {
 		bool Open();
 		void Push(const char* connection_id, std::vector<std::string>& params);
 		void MakeQueueForConnection(const char* connection_id, std::vector<EQApplicationPacket*>& params);
+		void CheckNewConnection(const char* connection_id);
 };
 
 #endif

@@ -356,6 +356,35 @@ void EQWebStreamFactory::CheckTimeout()
 	MStreams.unlock();
 }
 
+
+void EQWebStreamFactory::CheckNewConnection(const char* connection_id)
+{
+	//lock streams the entire time were checking timeouts, it should be fast.
+	MStreams.lock();
+
+	unsigned long now = Timer::GetCurrentTime();
+	std::map<std::string, std::shared_ptr<EQWebStream>>::iterator stream_itr;
+
+	for (stream_itr = Streams.begin(); stream_itr != Streams.end();) {
+		std::shared_ptr<EQWebStream> s = stream_itr->second;
+		if (strcmp(connection_id, stream_itr->first.c_str()) == 0)
+		{
+			//abort everything
+
+			//first, clear the remaining packets we were sending
+			s->RemoveData();
+			std::map<std::string, std::shared_ptr<EQWebStream>>::iterator temp = stream_itr;
+			++stream_itr;
+			temp->second = nullptr;
+			Streams.erase(temp);
+			continue;
+		}
+		++stream_itr;
+	}
+	MStreams.unlock();
+}
+
+
 bool EQWebStreamFactory::FindSessionByID(const char* connection_id) { 
 	MStreams.lock();
 	std::map<std::string, std::shared_ptr<EQWebStream>>::iterator stream = Streams.find(connection_id); 

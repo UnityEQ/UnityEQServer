@@ -202,6 +202,15 @@ bool WebInterfaceConnection::Process()
 				}
 				else
 				{
+
+
+					uint32 opcode = std::stoi(params[2]);
+					//hardcoded, first expected packets
+					if (opcode == OP_SendLoginInfo || opcode == OP_ZoneEntry)
+					{
+						eqwsf.CheckNewConnection(session_id);
+					}
+
 					if(eqwsf.FindSessionByID(session_id))
 					{
 						eqwsf.ProcessIncomingPacket(session_id, params);

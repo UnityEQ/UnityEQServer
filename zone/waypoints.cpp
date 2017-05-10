@@ -531,7 +531,7 @@ bool Mob::MakeNewPositionAndSendUpdate(float x, float y, float z, int speed, boo
 			{
 				glm::vec3 dest(m_Position.x, m_Position.y, m_Position.z);
 
-				float newz = zone->zonemap->FindBestZ(dest, nullptr) + 2.0f;
+				float newz = zone->zonemap->FindBestZ(dest, nullptr);
 
 				Log.Out(Logs::Detail, Logs::AI, "BestZ returned %4.3f at %4.3f, %4.3f, %4.3f", newz,m_Position.x,m_Position.y,m_Position.z);
 
@@ -710,7 +710,7 @@ bool Mob::MakeNewPositionAndSendUpdate(float x, float y, float z, int speed, boo
 }
 
 bool Mob::CalculateNewPosition2(float x, float y, float z, int speed, bool checkZ, bool calcHeading) {
-	return MakeNewPositionAndSendUpdate(x, y, z, speed, checkZ);
+	return MakeNewPositionAndSendUpdate(x, y, z, speed, false);
 }
 
 bool Mob::CalculateNewPosition(float x, float y, float z, int speed, bool checkZ, bool calcHeading) {
@@ -790,7 +790,7 @@ bool Mob::CalculateNewPosition(float x, float y, float z, int speed, bool checkZ
 		{
 			glm::vec3 dest(m_Position.x, m_Position.y, m_Position.z);
 
-			float newz = zone->zonemap->FindBestZ(dest, nullptr) + 2.0f;
+			float newz = zone->zonemap->FindBestZ(dest, nullptr);
 
 			Log.Out(Logs::Detail, Logs::AI, "BestZ returned %4.3f at %4.3f, %4.3f, %4.3f", newz,m_Position.x,m_Position.y,m_Position.z);
 

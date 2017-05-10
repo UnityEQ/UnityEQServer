@@ -2982,8 +2982,9 @@ struct TrackTarget_Struct
 */
 struct ZoneServerInfo_Struct
 {
-/*0000*/	char	ip[128];
 /*0128*/	uint16	port;
+/*0128*/	uint16	zone_id;
+/*0128*/	uint16	instance_id;
 };
 
 struct WhoAllPlayer{

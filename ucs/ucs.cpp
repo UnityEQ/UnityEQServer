@@ -32,7 +32,12 @@
 #include "worldserver.h"
 #include <list>
 #include <signal.h>
+FILE _iob[] = { *stdin, *stdout, *stderr };
 
+//extern "C" FILE * __cdecl __iob_func(void)
+//{
+//	return _iob;
+//}
 ChatChannelList *ChannelList;
 Clientlist *CL;
 EQEmuLogSys Log;

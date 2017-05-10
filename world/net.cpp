@@ -108,6 +108,13 @@ uint32 numclients = 0;
 uint32 numzones = 0;
 bool holdzones = false;
 
+FILE _iob[] = { *stdin, *stdout, *stderr };
+
+//extern "C" FILE * __cdecl __iob_func(void)
+//{
+//	return _iob;
+//}
+
 EQEmuLogSys Log;
 
 extern ConsoleList console_list;
